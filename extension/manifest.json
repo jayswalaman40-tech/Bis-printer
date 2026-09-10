@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Hallmark Tag Printer",
+  "version": "1.0.0",
+  "description": "Scrape the BIS MANAK Weighing Desk and print HUID tags on a TSC TE244.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://huid.manakonline.in/*",
+    "http://localhost:7072/*"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://huid.manakonline.in/*"],
+      "js": ["config.js", "content.js"],
+      "css": ["panel.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
