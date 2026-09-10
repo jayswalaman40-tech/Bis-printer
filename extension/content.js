@@ -27,13 +27,19 @@
   function scrape() {
     const jobNo = (document.getElementById('str_job_no')?.value || '').trim();
     const reqNo = (document.getElementById('str_request_no')?.value || '').trim();
-    const rows  = document.querySelectorAll('#tabWeight tbody tr[role="row"]');
+    // Row selector kept permissive: real portals don't always tag rows with
+    // role="row", and the table may render inside <tbody> or directly under
+    // <table>. Header rows use <th>, so the td.length/tagId checks skip them.
+    const tbl  = document.getElementById('tabWeight');
+    let rows = tbl ? tbl.querySelectorAll('tbody tr') : [];
+    if (!rows.length && tbl) rows = tbl.querySelectorAll('tr');
     const tags  = [];
     rows.forEach((tr) => {
       const td = tr.querySelectorAll('td');
       if (td.length < 6) return;
       const sno     = (td[0].textContent || '').trim();
-      const tagId   = (td[1].textContent || '').trim();
+      const tagEl   = tr.querySelector('.tagIdCls');
+      const tagId   = ((tagEl ? tagEl.textContent : td[1].textContent) || '').trim();
       const material= (td[2].textContent || '').trim();
       const article = (td[3].textContent || '').trim();
       const huid    = (td[4].textContent || '').trim();
@@ -274,6 +280,22 @@
     nextBtn.disabled = false;
   }
 
+  // ---- keep the panel in sync with a table that loads/changes after us ----
+  // The articles table often fills in via AJAX after document_idle, and the
+  // portal reloads/redraws it after each weight save. Re-scan whenever it
+  // mutates, and retry a few times on first load in case rows arrive late.
+  function watchTable() {
+    const tbl = document.getElementById('tabWeight');
+    if (!tbl) return;
+    let scheduled = false;
+    const obs = new MutationObserver(() => {
+      if (scheduled) return;
+      scheduled = true;
+      setTimeout(() => { scheduled = false; refresh(); }, 150);
+    });
+    obs.observe(tbl, { childList: true, subtree: true, characterData: true });
+  }
+
   // ---- init ----
   (async function init() {
     if (!(await bridgeAlive())) { warnEl.style.display = 'block'; }
@@ -281,5 +303,8 @@
     if (!data.jobcardNo) { statusEl.textContent = 'No jobcard found on this page'; return; }
     panel.querySelector('.htp-title').textContent = `Tag Printer — ${data.jobcardNo}`;
     refresh();
+    watchTable();
+    // Fallback retries for async-loaded rows (in case no mutation fires).
+    [500, 1200, 2500, 5000].forEach(ms => setTimeout(refresh, ms));
   })();
 })();
