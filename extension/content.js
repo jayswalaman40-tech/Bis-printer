@@ -99,13 +99,28 @@
     return `SN${base}-${seq}`;
   }
 
+  // ---- tamper signature (HMAC-SHA256, first 16 hex chars) ----
+  // Signs the tag's values so the verification page can reject edited URLs.
+  // The canonical string and secret MUST match the website's verifier.
+  async function signParams(p) {
+    const msg = [p.h, p.w, p.p, p.ac, p.dt].join('|');
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw', enc.encode(TAG_CONFIG.SIGN_SECRET),
+      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const buf = await crypto.subtle.sign('HMAC', key, enc.encode(msg));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+  }
+
   // ---- payload for one tag ----
-  function buildPayload(tag, jobcardNo, purityCode, templateDetail, templateBarcode) {
+  async function buildPayload(tag, jobcardNo, purityCode, templateDetail, templateBarcode) {
     const serial = serialFor(jobcardNo, tag.tag_id);
-    const qs = new URLSearchParams({
+    const params = {
       h: tag.huid, w: tag.weight, p: purityCode,
       ac: TAG_CONFIG.AHC_NAME, dt: new Date().toISOString().slice(0, 10)
-    }).toString();
+    };
+    const s = await signParams(params);
+    const qs = new URLSearchParams({ ...params, s }).toString();
     return {
       huid: tag.huid, weight: tag.weight, purity: purityCode,
       serial, barcode: `HD-${tag.huid}`,
@@ -317,7 +332,7 @@
       const tag = printable[i];
       statusEl.textContent = `Printing ${i+1} / ${printable.length} — Tag #${tag.tag_id}`;
       try {
-        await sendPrint(buildPayload(tag, data.jobcardNo, selPurity, selDetail, selBarcode));
+        await sendPrint(await buildPayload(tag, data.jobcardNo, selPurity, selDetail, selBarcode));
         ok++;
       } catch (e) {
         fail++; lastErr = (e && e.message) ? e.message : String(e);

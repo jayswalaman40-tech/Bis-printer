@@ -7,21 +7,54 @@ const PURITY_LABELS = {
   '833':'833 · 20 Karat','750':'750 · 18 Karat','585':'585 · 14 Karat','375':'375 · 9 Karat',
 };
 
+// Tamper protection: must match SIGN_SECRET in extension/config.js.
+const SIGN_SECRET = 'hallmark-desk-2026-change-me';
+
+// Recompute the tag signature the extension put in ?s= and compare.
+async function verifySignature(q) {
+  if (!q.s) return false;
+  const msg = [q.h || '', q.w || '', q.p || '', q.ac || '', q.dt || ''].join('|');
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', enc.encode(SIGN_SECRET),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const buf = await crypto.subtle.sign('HMAC', key, enc.encode(msg));
+  const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+  return hex === String(q.s);
+}
+
 export default function TagDetailPage() {
   const router = useRouter();
   const [data, setData] = useState(null);
+  const [tampered, setTampered] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     if (!router.isReady) return;
     const q = router.query;
     if (!q.h) { setReady(true); return; }
-    setData({ huid:q.h||'', weight:q.w||'', purity:q.p||'',
-      ahc_name:q.ac||'Assaying & Hallmarking Centre', print_date:q.dt||'' });
-    setReady(true);
+    verifySignature(q).then((valid) => {
+      if (!valid) { setTampered(true); setReady(true); return; }
+      setData({ huid:q.h||'', weight:q.w||'', purity:q.p||'',
+        ahc_name:q.ac||'Assaying & Hallmarking Centre', print_date:q.dt||'' });
+      setReady(true);
+    });
   }, [router.isReady, router.query]);
 
   if (!ready) return <div className="loading">Loading…</div>;
+  if (tampered) return (
+    <div className="error">
+      <div>
+        <div className="err-badge">✕ INVALID TAG</div>
+        <p>This link could not be verified. It may have been edited or is not a genuine hallmark tag.</p>
+      </div>
+      <style jsx>{`
+        .error{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;text-align:center;background:#1B2430;font-family:system-ui,sans-serif;}
+        .err-badge{display:inline-block;font:700 13px system-ui,sans-serif;letter-spacing:.12em;color:#fff;background:#8C2A2A;border-radius:3px;padding:8px 14px;margin-bottom:14px;}
+        p{color:#C4CBBE;font-size:14px;max-width:340px;line-height:1.6;margin:0 auto;}
+      `}</style>
+    </div>
+  );
   if (!data)  return <div className="error">Invalid tag. Please scan again.</div>;
   const purity = PURITY_LABELS[data.purity] || data.purity;
 

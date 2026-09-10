@@ -65,8 +65,12 @@ An interactive mock of the end-user flow is in
 ### Website (Vercel, one time)
 
 1. Deploy the `website/` project to Vercel.
-2. Verify a test URL renders HUID / Weight / Purity, e.g.:
-   `https://hallmark-desk-five.vercel.app/tag?h=85LTAZ&w=5.230&p=916&ac=Shreem+Hallmarking+Centre&dt=2026-09-10`
+2. Verify a signed test URL renders HUID / Weight / Purity, e.g.:
+   `https://hallmark-desk-five.vercel.app/tag?h=T56EMT&w=6.84&p=916&ac=Shreem+Hallmarking+Centre&dt=2026-09-10&s=7ddcdee2d38b0611`
+
+> Tag URLs are signed (`s=`). An edited or unsigned URL shows **"Invalid tag"**.
+> The signing secret `SIGN_SECRET` must be identical in `extension/config.js`
+> and `website/pages/tag/index.jsx`; change it per deployment.
 
 ## Serial numbers
 
