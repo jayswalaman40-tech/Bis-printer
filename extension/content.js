@@ -302,18 +302,32 @@
   async function printAll() {
     const { data } = refresh();
     const printable = data.tags.filter(t => t.canPrint);
+    if (!printable.length) { statusEl.textContent = 'Nothing to print.'; return; }
+
+    // Don't pretend to print when the local bridge isn't reachable.
+    if (!(await bridgeAlive())) {
+      warnEl.style.display = 'block';
+      statusEl.innerHTML = '<span class="htp-miss">✕ Bridge server not running — start start.bat on the PC, then reload.</span>';
+      return;
+    }
+
     nextBtn.disabled = true;
+    let ok = 0, fail = 0, lastErr = '';
     for (let i = 0; i < printable.length; i++) {
       const tag = printable[i];
       statusEl.textContent = `Printing ${i+1} / ${printable.length} — Tag #${tag.tag_id}`;
       try {
         await sendPrint(buildPayload(tag, data.jobcardNo, selPurity, selDetail, selBarcode));
+        ok++;
       } catch (e) {
+        fail++; lastErr = (e && e.message) ? e.message : String(e);
         console.error('[TagPrinter] print failed', tag.tag_id, e);
       }
       await new Promise(r => setTimeout(r, 600));  // TSC TE244 breathing room
     }
-    statusEl.textContent = `Done — ${printable.length} printed ✓`;
+    statusEl.innerHTML = fail
+      ? `<span class="htp-miss">Printed ${ok}, failed ${fail}. ${lastErr ? '('+lastErr+')' : ''}</span>`
+      : `Done — ${ok} printed ✓`;
     nextBtn.disabled = false;
   }
 
