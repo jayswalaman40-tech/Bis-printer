@@ -66,7 +66,7 @@ An interactive mock of the end-user flow is in
 
 1. Deploy the `website/` project to Vercel.
 2. Verify a test URL renders HUID / Weight / Purity, e.g.:
-   `https://hallmark-desk.vercel.app/tag?h=85LTAZ&w=5.230&p=916&ac=Shreem+Hallmarking+Centre&dt=2026-09-10`
+   `https://hallmark-desk-five.vercel.app/tag?h=85LTAZ&w=5.230&p=916&ac=Shreem+Hallmarking+Centre&dt=2026-09-10`
 
 ## Serial numbers
 
