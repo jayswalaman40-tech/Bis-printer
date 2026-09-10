@@ -10,23 +10,49 @@ const app = express();
 const PORT = 7072;
 const PRINTER_NAME = 'TSC TE244';   // exact Windows printer/share name
 
+// TEST MODE — for a full end-to-end trial without a printer.
+// Enable with `node bridge-server.js --mock` (or start-test.bat), or by
+// setting HALLMARK_MOCK=1. In test mode each job's TSPL is saved to ./jobs
+// instead of being sent to the printer, so you can verify the whole flow
+// (panel -> template -> Print All -> "Done ✓") and inspect the output.
+const MOCK_MODE = process.argv.includes('--mock') || process.env.HALLMARK_MOCK === '1';
+const JOBS_DIR  = path.join(__dirname, 'jobs');
+
 app.use(cors({ origin: 'https://huid.manakonline.in' }));
 app.use(express.json());
 
-app.get('/health', (req, res) => res.json({ ok: true, printer: PRINTER_NAME }));
+app.get('/health', (req, res) => res.json({ ok: true, printer: PRINTER_NAME, mock: MOCK_MODE }));
 
 app.post('/print-tag', async (req, res) => {
   const p = req.body;
   if (!p.huid || !p.barcode) return res.status(400).json({ ok:false, error:'huid/barcode missing' });
   try {
     const tspl = buildTSPL(p);
-    await sendToPrinter(tspl);
-    res.json({ ok:true });
+    if (MOCK_MODE) {
+      await saveMockJob(p, tspl);
+    } else {
+      await sendToPrinter(tspl);
+    }
+    res.json({ ok:true, mock: MOCK_MODE });
   } catch (e) {
     console.error('[Bridge]', e.message);
     res.status(500).json({ ok:false, error:e.message });
   }
 });
+
+// TEST MODE: write the tag's TSPL to ./jobs/<serial|huid>.tspl and log it.
+function saveMockJob(p, tspl) {
+  return new Promise((resolve, reject) => {
+    try { fs.mkdirSync(JOBS_DIR, { recursive: true }); } catch (e) {}
+    const safe = String(p.serial || p.huid || Date.now()).replace(/[^A-Za-z0-9._-]/g, '_');
+    const file = path.join(JOBS_DIR, `${safe}.tspl`);
+    fs.writeFile(file, tspl, 'ascii', (err) => {
+      if (err) return reject(new Error('mock write failed: ' + err.message));
+      console.log(`[Bridge][TEST] saved ${p.serial || p.huid}  ->  ${file}`);
+      resolve(true);
+    });
+  });
+}
 
 /* 100mm x 15mm tag @203dpi (8 dots/mm):
    Left details : X 4..250   (32.5mm)
@@ -91,5 +117,8 @@ function sendToPrinter(tspl) {
 
 app.listen(PORT, '127.0.0.1', () => {
   console.log(`Hallmark Tag Bridge running on http://localhost:${PORT}  (printer: ${PRINTER_NAME})`);
+  if (MOCK_MODE) {
+    console.log(`*** TEST MODE — no printer needed. TSPL saved to: ${JOBS_DIR} ***`);
+  }
   console.log('Keep this window open.');
 });
