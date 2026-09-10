@@ -6,10 +6,22 @@
 (function () {
   // ---- page detection (DOM-based, reliable) ----
   function isWeighingDesk() {
-    return !!document.getElementById('tabWeight')
+    return (!!document.getElementById('tabWeight')
+         || !!document.getElementById('weightTable'))
         && !!document.getElementById('str_job_no');
   }
   if (!isWeighingDesk()) return;
+
+  // The Weighing Desk has TWO tables:
+  //   #tabWeight   — "Articles Weight Capture": rows still to be weighed,
+  //                  weight is a live input, has a Save button.
+  //   #weightTable — "Article Weight Details": already-weighed articles,
+  //                  HUID + weight are plain text (this is what we print).
+  // Both are DataTables with pagination, so only the current page's rows are
+  // in the DOM. We read #weightTable first (completed items) and fall back to
+  // #tabWeight; expandTable() forces all rows to render so nothing is missed.
+  const PRINT_TABLE = 'weightTable';
+  const ENTRY_TABLE = 'tabWeight';
 
   // ---- constants ----
   const PURITY_OPTIONS = [
@@ -23,35 +35,60 @@
   ];
   const PURITY_LABEL = Object.fromEntries(PURITY_OPTIONS.map(o => [o.code, o.label]));
 
-  // ---- scraper ----
-  function scrape() {
-    const jobNo = (document.getElementById('str_job_no')?.value || '').trim();
-    const reqNo = (document.getElementById('str_request_no')?.value || '').trim();
-    // Row selector kept permissive: real portals don't always tag rows with
-    // role="row", and the table may render inside <tbody> or directly under
-    // <table>. Header rows use <th>, so the td.length/tagId checks skip them.
-    const tbl  = document.getElementById('tabWeight');
-    let rows = tbl ? tbl.querySelectorAll('tbody tr') : [];
-    if (!rows.length && tbl) rows = tbl.querySelectorAll('tr');
-    const tags  = [];
+  // Force a DataTables-driven table to show every row (default page size is
+  // 10). We bump its "length" <select> to the largest option and fire a
+  // native change event, which the page's jQuery handler picks up and redraws.
+  function expandTable(tblId) {
+    const sel = document.querySelector(`select[name="${tblId}_length"]`);
+    if (!sel || !sel.options.length) return;
+    const nums = Array.from(sel.options).map(o => parseInt(o.value, 10)).filter(n => !isNaN(n));
+    if (!nums.length) return;
+    const max = String(Math.max(...nums));
+    if (sel.value !== max) {
+      sel.value = max;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
+  // Read one table's rows into tag objects. Column order is the same for both
+  // tables: [S No, AHC Tag, Material, Item Category, HUID, Weight, (Save)].
+  // Weight is a live input in #tabWeight and plain text in #weightTable.
+  function readTable(tblId) {
+    const tbl = document.getElementById(tblId);
+    if (!tbl) return [];
+    let rows = tbl.querySelectorAll('tbody tr');
+    if (!rows.length) rows = tbl.querySelectorAll('tr');
+    const out = [];
     rows.forEach((tr) => {
+      if (tr.querySelector('td.dataTables_empty')) return;   // "No data available"
       const td = tr.querySelectorAll('td');
-      if (td.length < 6) return;
-      const sno     = (td[0].textContent || '').trim();
-      const tagEl   = tr.querySelector('.tagIdCls');
-      const tagId   = ((tagEl ? tagEl.textContent : td[1].textContent) || '').trim();
-      const material= (td[2].textContent || '').trim();
-      const article = (td[3].textContent || '').trim();
-      const huid    = (td[4].textContent || '').trim();
-      const wInput  = tr.querySelector('input.weightCls, input.scan-input, input[name="articlWeight"]');
-      const weight  = wInput ? (wInput.value || '').trim() : '';
+      if (td.length < 5) return;                             // header / spacer rows
+      const tagEl  = tr.querySelector('.tagIdCls');
+      const tagId  = ((tagEl ? tagEl.textContent : td[1].textContent) || '').trim();
       if (!tagId) return;
-      tags.push({
-        position: sno ? parseInt(sno, 10) : tags.length + 1,
+      const sno      = (td[0].textContent || '').trim();
+      const material = (td[2] ? td[2].textContent : '').trim();
+      const article  = (td[3] ? td[3].textContent : '').trim();
+      const huid     = (td[4] ? td[4].textContent : '').trim();
+      const wInput   = tr.querySelector('input.weightCls, input.scan-input, input[name="articlWeight"]');
+      const weight   = (wInput ? (wInput.value || '') : (td[5] ? td[5].textContent : '')).trim();
+      out.push({
+        position: sno ? parseInt(sno, 10) : out.length + 1,
         tag_id: tagId, material, article, huid, weight,
         canPrint: !!huid && !!weight
       });
     });
+    return out;
+  }
+
+  // ---- scraper ----
+  function scrape() {
+    const jobNo = (document.getElementById('str_job_no')?.value || '').trim();
+    const reqNo = (document.getElementById('str_request_no')?.value || '').trim();
+    // Prefer the completed-articles table; fall back to the entry table while
+    // weighing is still in progress.
+    let tags = readTable(PRINT_TABLE);
+    if (!tags.length) tags = readTable(ENTRY_TABLE);
     return { jobcardNo: jobNo, requestNo: reqNo, tags };
   }
 
@@ -285,15 +322,16 @@
   // portal reloads/redraws it after each weight save. Re-scan whenever it
   // mutates, and retry a few times on first load in case rows arrive late.
   function watchTable() {
-    const tbl = document.getElementById('tabWeight');
-    if (!tbl) return;
     let scheduled = false;
-    const obs = new MutationObserver(() => {
+    const schedule = () => {
       if (scheduled) return;
       scheduled = true;
       setTimeout(() => { scheduled = false; refresh(); }, 150);
+    };
+    [PRINT_TABLE, ENTRY_TABLE].forEach(id => {
+      const tbl = document.getElementById(id);
+      if (tbl) new MutationObserver(schedule).observe(tbl, { childList: true, subtree: true, characterData: true });
     });
-    obs.observe(tbl, { childList: true, subtree: true, characterData: true });
   }
 
   // ---- init ----
@@ -302,9 +340,12 @@
     const data = scrape();
     if (!data.jobcardNo) { statusEl.textContent = 'No jobcard found on this page'; return; }
     panel.querySelector('.htp-title').textContent = `Tag Printer — ${data.jobcardNo}`;
-    refresh();
     watchTable();
-    // Fallback retries for async-loaded rows (in case no mutation fires).
-    [500, 1200, 2500, 5000].forEach(ms => setTimeout(refresh, ms));
+    // Show every row (DataTables defaults to 10 per page) before scraping.
+    expandTable(PRINT_TABLE);
+    expandTable(ENTRY_TABLE);
+    refresh();
+    // Fallback retries: DataTables redraws async, and the table may load late.
+    [400, 900, 1800, 3500].forEach(ms => setTimeout(() => { expandTable(PRINT_TABLE); refresh(); }, ms));
   })();
 })();
