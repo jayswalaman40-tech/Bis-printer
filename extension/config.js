@@ -12,5 +12,5 @@ const TAG_CONFIG = {
   // verification page re-checks it, so an edited URL shows "Invalid tag".
   // MUST match SIGN_SECRET in the website (website/pages/tag/index.jsx).
   // Change it to your own value before handing over to a customer.
-  SIGN_SECRET: 'hallmark-desk-2026-change-me',
+  SIGN_SECRET: 'hd-d081b74809f6507741bcceb5c6783dea',
 };

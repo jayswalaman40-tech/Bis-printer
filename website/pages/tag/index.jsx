@@ -8,7 +8,7 @@ const PURITY_LABELS = {
 };
 
 // Tamper protection: must match SIGN_SECRET in extension/config.js.
-const SIGN_SECRET = 'hallmark-desk-2026-change-me';
+const SIGN_SECRET = 'hd-d081b74809f6507741bcceb5c6783dea';
 
 // Recompute the tag signature the extension put in ?s= and compare.
 async function verifySignature(q) {
