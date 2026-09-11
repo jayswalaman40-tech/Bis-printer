@@ -68,8 +68,9 @@ function buildTSPL(p) {
   const wt = p.weight ? `${p.weight}g` : '';
   const huid = p.huid;
   const serial = p.serial || '';
-  // Print the HUID as the Code128 payload; 6 chars fit comfortably in 30mm.
-  const bc = huid;
+  // The barcode side is a QR of the signed verification URL, so a phone scan
+  // opens the detail page directly. Fall back to the HUID if no URL is sent.
+  const url = p.detail_url || `HD-${huid}`;
   const D = DET_X;
 
   let left = '';
@@ -93,14 +94,16 @@ function buildTSPL(p) {
       `TEXT ${D+130},66,"1",0,1,1,"Purity"\n` + `TEXT ${D+130},82,"2",0,1,1,"${purity}"\n`;
   }
 
-  const scanHint = (p.template_barcode === 'b2') ? `TEXT ${BC_X},108,"1",0,1,1,"Scan to verify"\n` : '';
+  // QR on the left of the barcode block; serial (and optional hint) to its right.
+  const TX = BC_X + 100;   // text column, right of the QR
+  const scanHint = (p.template_barcode === 'b2') ? `TEXT ${TX},64,"1",0,1,1,"Scan to verify"\n` : '';
 
   return [
     `SIZE 100 mm, 15 mm`, `GAP 2 mm, 0 mm`, `SPEED 4`, `DENSITY 8`,
     `DIRECTION 0`, `REFERENCE 0,0`, `CLS`,
     left,
-    `BARCODE ${BC_X},8,"128",64,0,0,2,2,"${bc}"`,
-    `TEXT ${BC_X},80,"2",0,1,1,"${serial}"`,
+    `QRCODE ${BC_X},14,M,2,A,0,"${url}"`,
+    `TEXT ${TX},44,"1",0,1,1,"${serial}"`,
     scanHint,
     `PRINT 1,1`, ``
   ].join('\n');
