@@ -5,7 +5,7 @@
 const TAG_CONFIG = {
   BRIDGE_URL:  'http://localhost:7072',
   DETAIL_BASE: 'https://hallmark-desk-five.vercel.app/tag',
-  AHC_NAME:    'Shreem Hallmarking Centre',   // per-customer
+  AHC_NAME:    'Jaliyan Hallmarking Center',   // per-customer
   AHC_CODE:    'SHC001',                        // per-customer
 
   // Tamper protection: each tag URL is signed with this secret and the
