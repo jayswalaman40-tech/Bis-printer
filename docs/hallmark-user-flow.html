@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hallmark Tag Printer — User Flow</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap');
+  :root { --ink:#1B2430; --ink-soft:#3A3F48; --muted:#8A9099; --line:#E0E3DA; --line-2:#ECEEE7; --paper:#F5F4EF; --card:#FAFAF7; --gold:#A8802A; --gold-dk:#8C6820; --green:#3A6B3A; --rust:#8C3A00; --blue:#1F5E8C; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'IBM Plex Sans',system-ui,sans-serif; background:radial-gradient(circle at 20% 0%, #23303f 0%, #1B2430 55%); color:var(--ink); min-height:100vh; padding:32px 20px 110px; }
+  .rail { max-width:820px; margin:0 auto 30px; }
+  .rail-title { text-align:center; color:#F5F4EF; margin-bottom:22px; }
+  .rail-title .kick { display:inline-block; font:600 10px 'IBM Plex Sans',sans-serif; letter-spacing:.22em; text-transform:uppercase; color:var(--gold); border:1px solid rgba(168,128,42,.5); padding:5px 14px; border-radius:2px; margin-bottom:14px; }
+  .rail-title h1 { font:500 clamp(24px,4vw,36px) 'Fraunces',serif; letter-spacing:-.01em; }
+  .steps { display:flex; align-items:center; justify-content:center; }
+  .step { display:flex; flex-direction:column; align-items:center; gap:7px; position:relative; flex:1; max-width:150px; }
+  .step .bub { width:32px; height:32px; border-radius:50%; display:grid; place-items:center; font:600 13px 'IBM Plex Mono',monospace; background:rgba(255,255,255,.07); color:#8A929C; border:1px solid rgba(255,255,255,.15); transition:all .3s; z-index:2; }
+  .step .lbl { font:500 11px 'IBM Plex Sans',sans-serif; color:#7C848D; text-align:center; transition:color .3s; }
+  .step::before { content:''; position:absolute; top:16px; left:-50%; width:100%; height:2px; background:rgba(255,255,255,.1); z-index:1; }
+  .step:first-child::before { display:none; }
+  .step.active .bub { background:var(--gold); border-color:var(--gold); color:var(--ink); box-shadow:0 0 0 5px rgba(168,128,42,.18); }
+  .step.active .lbl { color:#F5F4EF; }
+  .step.done .bub { background:var(--green); border-color:var(--green); color:#fff; }
+  .step.done::before, .step.active::before { background:var(--gold); }
+  .stage { max-width:960px; margin:0 auto; position:relative; }
+  .flow { display:none; animation:fade .4s ease; }
+  .flow.on { display:block; }
+  @keyframes fade { from{opacity:0;transform:translateY(12px);} to{opacity:1;transform:none;} }
+  .caption { text-align:center; color:#9AA3AD; font-size:14px; margin:0 auto 22px; max-width:580px; line-height:1.6; }
+  .caption b { color:#F5F4EF; font-weight:600; }
+  .browser { max-width:920px; margin:0 auto; background:#fff; border-radius:8px; overflow:hidden; box-shadow:0 24px 60px rgba(0,0,0,.4); }
+  .bbar { display:flex; align-items:center; gap:8px; background:#E8EAE4; padding:11px 14px; border-bottom:1px solid #D4D8CE; }
+  .dots { display:flex; gap:6px; }
+  .dots i { width:11px; height:11px; border-radius:50%; display:block; }
+  .dots i:nth-child(1){background:#ED6A5E;} .dots i:nth-child(2){background:#F4BF4F;} .dots i:nth-child(3){background:#61C554;}
+  .url { flex:1; background:#fff; border:1px solid #D4D8CE; border-radius:20px; padding:6px 14px; font:12px 'IBM Plex Mono',monospace; color:#5C6672; display:flex; align-items:center; gap:7px; }
+  .url .lock { color:var(--green); }
+  .bbody { position:relative; height:540px; background:#F0F1EC; overflow:hidden; }
+  .ghost { padding:26px 30px; }
+  .ghost h3 { font-size:15px; color:#6A7078; margin-bottom:4px; }
+  .ghost .sub { font:12px 'IBM Plex Mono',monospace; color:#A6ACB2; margin-bottom:20px; }
+  .gt { width:58%; opacity:.5; }
+  .gt .gr { height:30px; border-bottom:1px solid #DEE0D9; display:flex; gap:14px; align-items:center; }
+  .gc { height:8px; background:#D2D6CD; border-radius:2px; }
+  .panel { position:absolute; right:20px; bottom:20px; width:560px; max-width:calc(100% - 40px); background:#F7F8F4; border:1px solid #C4CBBE; border-bottom:2px solid var(--ink); border-radius:2px; box-shadow:0 12px 34px rgba(27,36,48,.28); opacity:0; transform:translateY(20px); transition:all .5s; }
+  .panel.in { opacity:1; transform:none; }
+  .ph { display:flex; align-items:center; gap:8px; padding:9px 12px; border-bottom:1px solid #C4CBBE; font-size:11px; letter-spacing:.1em; text-transform:uppercase; }
+  .pdot { width:7px; height:7px; border-radius:50%; background:var(--gold); }
+  .ptitle { flex:1; font-weight:600; }
+  .px { background:none; border:none; color:var(--muted); cursor:pointer; font-size:13px; }
+  .pbody { padding:12px; }
+  .hpurity { display:flex; align-items:center; gap:8px; margin-bottom:10px; padding:8px; background:#EEF0EA; border:1px solid var(--line); border-radius:2px; }
+  .hpurity label { font:600 11px 'IBM Plex Sans',sans-serif; color:var(--ink); white-space:nowrap; }
+  .hpurity select { flex:1; padding:5px 8px; font:600 12px 'IBM Plex Mono',monospace; color:var(--ink); background:#fff; border:1px solid #C4CBBE; border-radius:2px; cursor:pointer; }
+  .pstatus { font-size:12px; margin-bottom:6px; min-height:16px; }
+  .pbar { height:3px; background:#C4CBBE; border-radius:1px; overflow:hidden; margin-bottom:12px; }
+  .pbar i { display:block; height:100%; width:0%; background:var(--gold); transition:width .4s; }
+  .twrap { max-height:230px; overflow-y:auto; border:1px solid var(--line); border-radius:2px; margin-bottom:12px; }
+  table.tt { width:100%; border-collapse:collapse; font-size:12px; }
+  .tt thead th { position:sticky; top:0; background:var(--ink); color:var(--paper); font:600 10px 'IBM Plex Sans',sans-serif; letter-spacing:.06em; text-transform:uppercase; padding:8px 7px; text-align:left; white-space:nowrap; }
+  .tt td { padding:8px 7px; border-bottom:1px solid var(--line-2); color:var(--ink-soft); }
+  .tt tbody tr:nth-child(even){ background:#FCFCFA; }
+  .tt tbody tr:last-child td { border-bottom:none; }
+  .csno{color:var(--muted);} .ctag{font:600 12px 'IBM Plex Mono',monospace;color:var(--ink);}
+  .chuid{font:11px 'IBM Plex Mono',monospace;color:var(--green);white-space:nowrap;} .chuid.miss{color:var(--rust);}
+  .cwt{font-variant-numeric:tabular-nums;text-align:right;} .cpur{font-variant-numeric:tabular-nums;}
+  .cstat{text-align:center;width:44px;}
+  tr.blk td{background:#FFF7F2!important;opacity:.72;} tr.prn td{background:#FDF6E3!important;} tr.dn td{background:#F1F6EF!important;}
+  .ok{color:var(--green);font-weight:700;} .spin{color:var(--gold);} .dash{color:#C4A08A;}
+  .pall { width:100%; padding:12px; font:700 14px 'IBM Plex Sans',sans-serif; color:#fff; background:var(--gold); border:none; border-radius:2px; cursor:pointer; letter-spacing:.02em; transition:background .15s; }
+  .pall:hover{ background:var(--gold-dk); }
+  .pall:disabled{ background:#C4CBBE; color:var(--muted); cursor:not-allowed; }
+
+  /* ===== Template selection ===== */
+  .tpl-wrap { max-width:900px; margin:0 auto; background:#FAFAF7; border-radius:8px; box-shadow:0 20px 50px rgba(0,0,0,.35); overflow:hidden; }
+  .tpl-head { background:var(--ink); color:var(--paper); padding:20px 26px; }
+  .tpl-head h2 { font:500 19px 'Fraunces',serif; margin-bottom:3px; }
+  .tpl-head p { font-size:12px; color:#9AA3AD; }
+  .tpl-body { padding:24px 26px; }
+  .tpl-sec-lbl { font:600 10px 'IBM Plex Sans',sans-serif; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0 0 12px; }
+  .tpl-cards { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:26px; }
+  @media(max-width:720px){ .tpl-cards{ grid-template-columns:1fr; } }
+  .tcardsel { border:1.5px solid var(--line); border-radius:5px; background:#fff; cursor:pointer; overflow:hidden; transition:all .15s; position:relative; }
+  .tcardsel:hover { border-color:var(--gold); }
+  .tcardsel.sel { border-color:var(--gold); box-shadow:0 0 0 3px rgba(168,128,42,.16); }
+  .tcardsel .tc-top { padding:8px 12px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line-2); }
+  .tc-name { font:600 12px 'IBM Plex Sans',sans-serif; color:var(--ink); }
+  .tc-rec { font:600 9px 'IBM Plex Sans',sans-serif; letter-spacing:.08em; text-transform:uppercase; color:var(--gold); border:1px solid var(--gold); border-radius:10px; padding:2px 7px; }
+  .tc-check { width:16px; height:16px; border-radius:50%; border:1.5px solid #C4CBBE; display:grid; place-items:center; }
+  .tcardsel.sel .tc-check { background:var(--gold); border-color:var(--gold); }
+  .tcardsel.sel .tc-check::after { content:'✓'; color:#fff; font-size:10px; font-weight:700; }
+  .tc-preview { padding:16px 14px; display:flex; align-items:center; justify-content:center; min-height:104px; background:#FDFCF8; }
+
+  /* mini detail-side renders (also used full-size on tag) */
+  .ds { width:210px; }
+  /* T1 Refined */
+  .ds-t1 { display:flex; flex-direction:column; gap:4px; }
+  .ds-t1 .h { display:flex; align-items:baseline; gap:6px; }
+  .ds-t1 .hk { font:600 8px 'IBM Plex Sans',sans-serif; letter-spacing:.14em; color:var(--muted); text-transform:uppercase; }
+  .ds-t1 .hv { font:700 17px 'IBM Plex Mono',monospace; color:var(--ink); letter-spacing:.06em; }
+  .ds-t1 .rule { height:1px; background:#D9D8CC; margin:2px 0; }
+  .ds-t1 .r { display:flex; justify-content:space-between; }
+  .ds-t1 .r .k { font:600 8px 'IBM Plex Sans',sans-serif; letter-spacing:.1em; color:var(--muted); text-transform:uppercase; }
+  .ds-t1 .r .v { font:600 12px 'IBM Plex Mono',monospace; color:var(--ink-soft); }
+  /* T2 Emphasis */
+  .ds-t2 { text-align:center; }
+  .ds-t2 .hk { font:600 8px 'IBM Plex Sans',sans-serif; letter-spacing:.18em; color:var(--muted); text-transform:uppercase; margin-bottom:2px; }
+  .ds-t2 .hv { font:700 22px 'IBM Plex Mono',monospace; color:var(--ink); letter-spacing:.08em; line-height:1; }
+  .ds-t2 .sub { margin-top:6px; font:600 11px 'IBM Plex Mono',monospace; color:var(--ink-soft); letter-spacing:.02em; }
+  .ds-t2 .ahc { margin-top:5px; font:500 8px 'Fraunces',serif; color:var(--gold); letter-spacing:.04em; }
+  /* T3 Grid */
+  .ds-t3 { display:grid; grid-template-columns:1.3fr 1fr 1fr; gap:0; border:1px solid #E0DFD3; border-radius:3px; overflow:hidden; }
+  .ds-t3 .cell { padding:6px 8px; border-right:1px solid #ECEBDF; }
+  .ds-t3 .cell:last-child { border-right:none; }
+  .ds-t3 .k { font:600 7px 'IBM Plex Sans',sans-serif; letter-spacing:.1em; color:var(--muted); text-transform:uppercase; margin-bottom:2px; }
+  .ds-t3 .v { font:700 12px 'IBM Plex Mono',monospace; color:var(--ink); }
+  .ds-t3 .v.sm { font-size:11px; }
+
+  /* barcode-side mini */
+  .bs { width:150px; display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .bs .mini-bars { height:34px; width:100%; background:repeating-linear-gradient(90deg,#1B2430 0,#1B2430 2px,#fff 2px,#fff 4px,#1B2430 4px,#1B2430 5px,#fff 5px,#fff 8px,#1B2430 8px,#1B2430 11px,#fff 11px,#fff 12px); }
+  .bs .serial { font:600 9px 'IBM Plex Mono',monospace; color:var(--ink); letter-spacing:.16em; }
+  .bs .scan { font:500 7px 'IBM Plex Sans',sans-serif; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; }
+
+  /* final preview tag */
+  .final-wrap { border-top:1px solid var(--line); padding-top:20px; }
+  .final-lbl { font:600 10px 'IBM Plex Sans',sans-serif; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); text-align:center; margin-bottom:14px; }
+  .tag { position:relative; margin:0 auto; width:660px; max-width:100%; height:104px; background:#FDFCF8; border:1px solid #D8DACE; border-radius:3px; display:grid; grid-template-columns:1fr 84px 1fr; overflow:hidden; box-shadow:inset 0 0 0 1px #fff,0 2px 6px rgba(0,0,0,.06); }
+  .tside { padding:12px 18px; display:flex; flex-direction:column; justify-content:center; }
+  .tfold { background:repeating-linear-gradient(#F0EFE8,#F0EFE8 3px,#FDFCF8 3px,#FDFCF8 6px); border-left:1px dashed #C0C3B8; border-right:1px dashed #C0C3B8; display:grid; place-items:center; }
+  .thole { width:14px; height:14px; border-radius:50%; background:#fff; border:2px solid #B8BBB0; box-shadow:inset 0 1px 2px rgba(0,0,0,.15); }
+  .tright { align-items:center; justify-content:center; gap:6px; }
+  .tbars { height:50px; display:flex; align-items:stretch; }
+  .tbars span { display:block; }
+  .tserial { font:600 10px 'IBM Plex Mono',monospace; color:var(--ink); letter-spacing:.16em; }
+  .tdims { display:flex; justify-content:center; margin-top:14px; font:10px 'IBM Plex Mono',monospace; color:var(--muted); }
+  .tdims .d1,.tdims .d3 { flex:1; text-align:center; } .tdims .d2 { width:84px; text-align:center; }
+  .final-preview-scale { transform:scale(1); }
+  .ds-full { width:auto; }
+
+  .tpl-print { margin-top:22px; text-align:center; }
+
+  /* phone detail */
+  .phscene { display:flex; justify-content:center; }
+  .phone { width:372px; background:#000; border-radius:42px; padding:12px; box-shadow:0 30px 70px rgba(0,0,0,.5); }
+  .notch { height:26px; display:grid; place-items:center; }
+  .notch i { width:120px; height:20px; background:#000; border-radius:0 0 14px 14px; }
+  .pscreen { background:#FAFAF7; border-radius:32px; overflow:hidden; height:640px; overflow-y:auto; }
+  .pscreen::-webkit-scrollbar { width:0; }
+  .dh { background:var(--ink); color:var(--paper); padding:30px 24px 26px; text-align:center; }
+  .dbadge { display:inline-block; font:600 10px 'IBM Plex Sans',sans-serif; letter-spacing:.15em; color:var(--gold); border:1px solid var(--gold); padding:4px 11px; border-radius:2px; margin-bottom:14px; }
+  .dtitle { font:500 24px 'Fraunces',serif; margin-bottom:6px; }
+  .dahc { font-size:13px; color:#8A9099; }
+  .dhuid { background:#fff; border-bottom:2px solid var(--ink); padding:26px 24px; text-align:center; }
+  .dhlbl { font:600 10px 'IBM Plex Sans',sans-serif; letter-spacing:.14em; color:var(--muted); margin-bottom:9px; }
+  .dhval { font:700 26px 'IBM Plex Mono',monospace; color:var(--ink); letter-spacing:.06em; margin-bottom:8px; }
+  .dhsub { font-size:12px; color:var(--gold); }
+  .dgrid { background:#fff; margin-top:16px; border-top:1px solid #E8E6DF; border-bottom:1px solid #E8E6DF; }
+  .drow { display:flex; justify-content:space-between; align-items:center; padding:16px 24px; border-bottom:1px solid #F0EDE6; }
+  .drow:last-child { border-bottom:none; }
+  .drow .l { font-size:12px; color:var(--muted); letter-spacing:.05em; }
+  .drow .v { font:600 18px 'IBM Plex Mono',monospace; color:var(--ink); }
+  .dnote { margin:18px 24px 0; padding:14px; background:#EFF3ED; border-left:3px solid var(--green); border-radius:0 2px 2px 0; font-size:12px; line-height:1.6; color:#3A5A3A; }
+  .dnote strong { font-family:'IBM Plex Mono',monospace; }
+  .dfoot { text-align:center; margin:24px 0 30px; font:11px 'IBM Plex Sans',sans-serif; color:#C4CBBE; letter-spacing:.08em; }
+  .toolbar-sim { max-width:920px; margin:0 auto; }
+  .fake-toolbar { display:flex; justify-content:flex-end; align-items:center; gap:14px; background:#E8EAE4; border-radius:8px 8px 0 0; padding:10px 18px; border:1px solid #D4D8CE; border-bottom:none; }
+  .ext-icon { width:30px; height:30px; border-radius:6px; background:var(--gold); display:grid; place-items:center; font:700 15px 'Fraunces',serif; color:var(--ink); box-shadow:0 0 0 3px rgba(168,128,42,.25); }
+  .popup { width:320px; background:#F7F8F4; border:1px solid #C4CBBE; border-bottom:2px solid var(--ink); border-radius:3px; box-shadow:0 16px 40px rgba(0,0,0,.3); overflow:hidden; margin:0 auto; }
+  .eph { background:var(--ink); color:var(--paper); padding:16px; display:flex; align-items:center; gap:10px; }
+  .eph strong { font-size:14px; display:block; } .eph span { font-size:11px; color:#9AA3AD; }
+  .epl { width:30px; height:30px; border-radius:5px; background:var(--gold); display:grid; place-items:center; font:700 15px 'Fraunces',serif; color:var(--ink); }
+  .epbody { padding:16px; }
+  .epstate { display:flex; align-items:center; gap:8px; font-size:13px; padding:10px 12px; border-radius:2px; margin-bottom:12px; background:#F1F6EF; color:var(--green); border:1px solid #CDE0C9; }
+  .eprow { display:flex; justify-content:space-between; font-size:12px; padding:7px 0; border-bottom:1px solid var(--line-2); }
+  .eprow:last-child { border-bottom:none; }
+  .eprow span:first-child { color:var(--muted); }
+  .eprow span:last-child { font:500 12px 'IBM Plex Mono',monospace; color:var(--ink); }
+  .epnote { margin-top:12px; font-size:11px; color:var(--muted); line-height:1.5; background:#EEF0EA; padding:9px; border-radius:2px; }
+  .cta-row { text-align:center; margin-top:26px; }
+  .cta { display:inline-flex; align-items:center; gap:9px; font:600 14px 'IBM Plex Sans',sans-serif; background:var(--gold); color:var(--ink); border:none; border-radius:3px; padding:13px 24px; cursor:pointer; transition:background .15s; }
+  .cta:hover { background:#C6982F; }
+  .cta:disabled { background:#5b5f66; color:#9AA3AD; cursor:not-allowed; }
+  .hintline { text-align:center; color:#9AA3AD; font-size:13px; margin-top:20px; }
+  .resetbar { position:fixed; left:0; right:0; bottom:0; z-index:100; display:flex; align-items:center; justify-content:center; gap:16px; background:rgba(20,27,37,.92); backdrop-filter:blur(8px); border-top:1px solid rgba(255,255,255,.12); padding:12px 20px; }
+  .resetbar .rb-info { font:12px 'IBM Plex Mono',monospace; color:#8A929C; }
+  .resetbar .rb-info b { color:var(--gold); }
+  .reset-btn { display:inline-flex; align-items:center; gap:8px; font:600 13px 'IBM Plex Sans',sans-serif; background:#fff; color:var(--ink); border:none; border-radius:4px; padding:10px 20px; cursor:pointer; transition:transform .1s; }
+  .reset-btn:hover { transform:translateY(-1px); }
+</style>
+</head>
+<body>
+  <div class="rail">
+    <div class="rail-title">
+      <span class="kick">Hallmark Desk · User Flow</span>
+      <h1>A Day’s Work — Step by Step</h1>
+    </div>
+    <div class="steps" id="steps">
+      <div class="step active" data-s="0"><div class="bub">1</div><div class="lbl">Portal opened</div></div>
+      <div class="step" data-s="1"><div class="bub">2</div><div class="lbl">List + Purity</div></div>
+      <div class="step" data-s="2"><div class="bub">3</div><div class="lbl">Choose template</div></div>
+      <div class="step" data-s="3"><div class="bub">4</div><div class="lbl">Tag printed</div></div>
+      <div class="step" data-s="4"><div class="bub">5</div><div class="lbl">Scan → details</div></div>
+    </div>
+  </div>
+
+  <div class="stage">
+
+    <!-- STEP 0 -->
+    <section class="flow on" id="f0">
+      <p class="caption">The operator opens the <b>BIS MANAK portal</b> Weighing Desk page and clicks the extension icon — printer shows ready.</p>
+      <div class="toolbar-sim">
+        <div class="fake-toolbar"><span style="font:12px 'IBM Plex Mono',monospace;color:#8A9099;">Chrome toolbar</span><div class="ext-icon">H</div></div>
+        <div style="background:#fff;border:1px solid #D4D8CE;border-radius:0 0 8px 8px;padding:26px;display:flex;justify-content:center;">
+          <div class="popup">
+            <div class="eph"><div class="epl">H</div><div><strong>Hallmark Tag Printer</strong><span>v1.0 · NexaCore AI</span></div></div>
+            <div class="epbody">
+              <div class="epstate">● Printer connected — ready to print</div>
+              <div class="eprow"><span>Bridge server</span><span>Running · :7072</span></div>
+              <div class="eprow"><span>Printer</span><span>TSC TE244</span></div>
+              <div class="eprow"><span>Centre</span><span>Shreem HC</span></div>
+              <div class="epnote">Open the Weighing Desk page — the panel appears automatically.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cta-row"><button class="cta" onclick="go(1)">Open Weighing Desk →</button></div>
+    </section>
+
+    <!-- STEP 1 : list + purity -->
+    <section class="flow" id="f1">
+      <p class="caption">As the page loads, the <b>panel appears automatically</b>. <b>Select purity once</b> (for the whole jobcard), then continue to the template screen.</p>
+      <div class="browser">
+        <div class="bbar"><div class="dots"><i></i><i></i><i></i></div><div class="url"><span class="lock">🔒</span> huid.manakonline.in — Weighing Desk</div></div>
+        <div class="bbody">
+          <div class="ghost"><h3>BIS MANAK — Weighing Desk</h3><div class="sub">Jobcard: 126388371</div>
+            <div class="gt"><div class="gr"><div class="gc" style="width:30px"></div><div class="gc" style="width:120px"></div><div class="gc" style="width:80px"></div></div><div class="gr"><div class="gc" style="width:30px"></div><div class="gc" style="width:100px"></div><div class="gc" style="width:90px"></div></div><div class="gr"><div class="gc" style="width:30px"></div><div class="gc" style="width:130px"></div><div class="gc" style="width:70px"></div></div></div>
+          </div>
+          <div class="panel" id="panel1">
+            <div class="ph"><span class="pdot"></span><span class="ptitle">Tag Printer — 126388371</span><button class="px">✕</button></div>
+            <div class="pbody">
+              <div class="hpurity">
+                <label>Purity (whole jobcard):</label>
+                <select id="puritySel">
+                  <option value="">— Select —</option>
+                  <option value="999">24K · 999</option>
+                  <option value="958">23K · 958</option>
+                  <option value="916">22K · 916</option>
+                  <option value="833">20K · 833</option>
+                  <option value="750">18K · 750</option>
+                  <option value="585">14K · 585</option>
+                  <option value="375">9K · 375</option>
+                </select>
+              </div>
+              <p class="pstatus" id="st1">6 tags · 5 ready · 1 missing HUID</p>
+              <div class="twrap"><table class="tt"><thead><tr><th>#</th><th>Tag</th><th>Article</th><th>Purity</th><th>Wt (g)</th><th>HUID</th></tr></thead><tbody id="body1"></tbody></table></div>
+              <button class="pall" id="toTplBtn" onclick="goTemplates()" disabled>Select purity first</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="hintline"><b style="color:#F5F4EF">Select purity</b> → the button enables → the template screen opens.</p>
+    </section>
+
+    <!-- STEP 2 : template selection -->
+    <section class="flow" id="f2">
+      <p class="caption">Before printing, <b>choose a template</b> — for the details side and the barcode side. All tags in the jobcard print in this design. Live preview below.</p>
+      <div class="tpl-wrap">
+        <div class="tpl-head">
+          <h2>Choose Tag Template</h2>
+          <p>Jobcard 126388371 · 5 tags · Purity <span id="tplPur">916</span></p>
+        </div>
+        <div class="tpl-body">
+          <p class="tpl-sec-lbl">Details Side — design</p>
+          <div class="tpl-cards" id="detailCards"></div>
+
+          <p class="tpl-sec-lbl">Barcode Side — design</p>
+          <div class="tpl-cards" id="barcodeCards" style="grid-template-columns:repeat(2,1fr);max-width:420px;"></div>
+
+          <div class="final-wrap">
+            <div class="final-lbl">Live Preview — the tag that will print (Tag #20)</div>
+            <div class="tag" id="finalTag"></div>
+            <div class="tdims"><span class="d1">← 32.5 mm · details →</span><span class="d2">fold + hole</span><span class="d3">← 32.5 mm · barcode →</span></div>
+          </div>
+
+          <div class="tpl-print">
+            <button class="cta" id="printSelBtn" onclick="runPrint()">🖨 Print All Tags (5)</button>
+          </div>
+        </div>
+      </div>
+      <p class="hintline">Click a card to change the design — the preview updates live. Each tag’s serial number is <b style="color:#F5F4EF">unique</b>.</p>
+    </section>
+
+    <!-- STEP 3 : printed -->
+    <section class="flow" id="f3">
+      <p class="caption"><b>All tags printed ✓</b> — in the selected template. Each tag has a unique serial. The one tag without a HUID was skipped.</p>
+      <div style="max-width:760px;margin:0 auto;background:#fff;border-radius:6px;padding:34px;box-shadow:0 20px 50px rgba(0,0,0,.35);">
+        <div class="final-lbl">Printed Tag · #20 · RING+PENDENT</div>
+        <div class="tag" id="printedTag"></div>
+        <div class="tdims"><span class="d1">← 32.5 mm · details →</span><span class="d2">fold + hole</span><span class="d3">← 32.5 mm · barcode →</span></div>
+        <p style="text-align:center;color:#9AA3AD;font-size:13px;margin-top:14px;">When folded: one face shows details, the other the barcode. The serial is unique per tag.</p>
+      </div>
+      <div class="cta-row"><button class="cta" onclick="go(4)">📷 Scan this barcode →</button></div>
+    </section>
+
+    <!-- STEP 4 : scan detail -->
+    <section class="flow" id="f4">
+      <p class="caption">Scan the barcode — the detail page opens. Only <b>HUID · Weight · Purity</b>. The data lives inside the QR, so it works years later, even offline.</p>
+      <div class="phscene">
+        <div class="phone">
+          <div class="notch"><i></i></div>
+          <div class="pscreen">
+            <div class="dh"><span class="dbadge">BIS HALLMARKED</span><div class="dtitle">Hallmark Verified</div><div class="dahc">Shreem Hallmarking Centre</div></div>
+            <div class="dhuid"><div class="dhlbl">HUID</div><div class="dhval">85LTAZ</div><div class="dhsub">BIS Unique ID · Permanently recorded</div></div>
+            <div class="dgrid"><div class="drow"><span class="l">Weight</span><span class="v">5.230 g</span></div><div class="drow"><span class="l">Purity</span><span class="v" id="scanPur">916 · 22K</span></div></div>
+            <div class="dnote">Yeh tag hallmarking ke waqt BIS MANAK portal data se banaya gaya. HUID <strong>85LTAZ</strong> BIS me registered hai.</div>
+            <div class="dfoot">Powered by Hallmark Desk · NexaCore AI</div>
+          </div>
+        </div>
+      </div>
+      <div class="cta-row"><button class="cta" onclick="go(0)">↺ Replay the flow</button></div>
+    </section>
+
+  </div>
+
+  <div class="resetbar">
+    <span class="rb-info">Sample: HUID <b>85LTAZ</b> · 5.230 g · unique serial</span>
+    <button class="reset-btn" onclick="resetFlow()">↺ Reset Flow</button>
+  </div>
+
+<script>
+  // ---- sample jobcard (real portal shape) ----
+  const JOBCARD = '126388371';
+  const TAGS = [
+    { sno:1, tag:'18', article:'RING+PENDENT', wt:'4.120',  huid:'3LCRPA' },
+    { sno:2, tag:'19', article:'RING+PENDENT', wt:'12.480', huid:'BTSGJK' },
+    { sno:3, tag:'20', article:'RING+PENDENT', wt:'5.230',  huid:'85LTAZ' },
+    { sno:4, tag:'21', article:'RING+PENDENT', wt:'2.960',  huid:'7EDBNA' },
+    { sno:5, tag:'22', article:'RING+PENDENT', wt:'1.840',  huid:'1MUFNJ' },
+    { sno:6, tag:'23', article:'RING+PENDENT', wt:'0.610',  huid:'' },
+  ];
+
+  // ---- unique serial per tag (no duplicate): jobcard last4 + zero-padded tag + huid check char ----
+  function serialFor(t){
+    const base = JOBCARD.slice(-4);
+    const seq  = String(t.tag).padStart(4,'0');
+    return 'SN' + base + '-' + seq;   // e.g. SN8371-0020  (unique har tag)
+  }
+
+  const PURLABEL = { '999':'999 · 24K','958':'958 · 23K','916':'916 · 22K','833':'833 · 20K','750':'750 · 18K','585':'585 · 14K','375':'375 · 9K' };
+
+  let selDetail = 't1';   // default recommended
+  let selBarcode = 'b1';
+
+  // ---- barcode bars generator ----
+  function drawBarcode(el, seed) {
+    let h = 0; for (const c of seed) h = (h*31 + c.charCodeAt(0)) & 0xffffff;
+    const rand = () => { h = (h*1103515245 + 12345) & 0x7fffffff; return h/0x7fffffff; };
+    const W=[1,2,3,4]; let html='<span style="width:5px;background:transparent"></span>';
+    html+='<span style="width:2px;background:#1B2430"></span><span style="width:1px;background:transparent"></span><span style="width:2px;background:#1B2430"></span>';
+    for(let i=0;i<46;i++){ const w=W[Math.floor(rand()*W.length)]; const bar=rand()>0.42; html+='<span style="width:'+w+'px;background:'+(bar?'#1B2430':'transparent')+'"></span>'; }
+    html+='<span style="width:2px;background:#1B2430"></span><span style="width:1px;background:transparent"></span><span style="width:3px;background:#1B2430"></span><span style="width:5px;background:transparent"></span>';
+    el.innerHTML=html;
+  }
+
+  // ---- details-side renderers (3 templates) ----
+  function detailHTML(tpl, d){
+    if(tpl==='t1'){ // Refined
+      return '<div class="ds ds-full ds-t1">'+
+        '<div class="h"><span class="hk">HUID</span><span class="hv">'+d.huid+'</span></div>'+
+        '<div class="rule"></div>'+
+        '<div class="r"><span class="k">Weight</span><span class="v">'+d.wt+' g</span></div>'+
+        '<div class="r"><span class="k">Purity</span><span class="v">'+d.pur+'</span></div>'+
+      '</div>';
+    }
+    if(tpl==='t2'){ // Emphasis
+      return '<div class="ds ds-full ds-t2">'+
+        '<div class="hk">HUID</div><div class="hv">'+d.huid+'</div>'+
+        '<div class="sub">'+d.wt+' g&nbsp;&nbsp;·&nbsp;&nbsp;'+d.pur+'</div>'+
+        '<div class="ahc">Shreem Hallmarking Centre</div>'+
+      '</div>';
+    }
+    // t3 Grid
+    return '<div class="ds ds-full ds-t3">'+
+      '<div class="cell"><div class="k">HUID</div><div class="v">'+d.huid+'</div></div>'+
+      '<div class="cell"><div class="k">Wt(g)</div><div class="v sm">'+d.wt+'</div></div>'+
+      '<div class="cell"><div class="k">Purity</div><div class="v sm">'+d.purCode+'</div></div>'+
+    '</div>';
+  }
+
+  // ---- barcode-side renderers (2 templates); barsId unique so we can draw ----
+  function barcodeHTML(tpl, d, barsId){
+    if(tpl==='b2'){
+      return '<div class="tbars" id="'+barsId+'"></div><div class="tserial">'+d.serial+'</div><div class="bs scan" style="font-size:8px">Scan to verify</div>';
+    }
+    return '<div class="tbars" id="'+barsId+'"></div><div class="tserial">'+d.serial+'</div>';
+  }
+
+  // ---- build a full tag into a container ----
+  let barCounter = 0;
+  function renderTag(container, d){
+    const barsId = 'bars_'+(++barCounter);
+    container.innerHTML =
+      '<div class="tside tleft">'+detailHTML(selDetail,d)+'</div>'+
+      '<div class="tfold"><div class="thole"></div></div>'+
+      '<div class="tside tright">'+barcodeHTML(selBarcode,d,barsId)+'</div>';
+    drawBarcode(document.getElementById(barsId), 'HD-'+d.huid);
+  }
+
+  // ---- template selection cards ----
+  function sampleData(){
+    const p = document.getElementById('puritySel').value || '916';
+    const t = TAGS.find(x=>x.tag==='20');
+    return { huid:t.huid, wt:t.wt, pur:PURLABEL[p], purCode:p, serial:serialFor(t) };
+  }
+
+  function buildCards(){
+    const d = sampleData();
+    const details = [
+      {id:'t1', name:'Refined', rec:true},
+      {id:'t2', name:'Emphasis', rec:false},
+      {id:'t3', name:'Grid', rec:false},
+    ];
+    document.getElementById('detailCards').innerHTML = details.map(c=>
+      '<div class="tcardsel '+(selDetail===c.id?'sel':'')+'" onclick="pickDetail(\''+c.id+'\')">'+
+        '<div class="tc-top"><span class="tc-name">'+c.name+(c.rec?'':'')+'</span>'+
+        (c.rec?'<span class="tc-rec">Recommended</span>':'<span class="tc-check"></span>')+'</div>'+
+        '<div class="tc-preview">'+detailHTML(c.id,d)+'</div>'+
+      '</div>').join('');
+
+    const bars = [
+      {id:'b1', name:'Serial only'},
+      {id:'b2', name:'Serial + Scan hint'},
+    ];
+    document.getElementById('barcodeCards').innerHTML = bars.map(c=>
+      '<div class="tcardsel '+(selBarcode===c.id?'sel':'')+'" onclick="pickBarcode(\''+c.id+'\')">'+
+        '<div class="tc-top"><span class="tc-name">'+c.name+'</span><span class="tc-check"></span></div>'+
+        '<div class="tc-preview"><div class="bs"><div class="mini-bars"></div><div class="serial">'+d.serial+'</div>'+(c.id==='b2'?'<div class="scan">Scan to verify</div>':'')+'</div></div>'+
+      '</div>').join('');
+  }
+  window.pickDetail = function(id){ selDetail=id; buildCards(); renderFinal(); };
+  window.pickBarcode = function(id){ selBarcode=id; buildCards(); renderFinal(); };
+
+  function renderFinal(){ renderTag(document.getElementById('finalTag'), sampleData()); }
+
+  // ---- panel table ----
+  function curPurity(){ var e=document.getElementById('puritySel'); return e?e.value:''; }
+  function rowHTML(t){
+    const can=!!t.huid;
+    const pur = curPurity() || '<span class="dash">—</span>';
+    return '<tr data-tag="'+t.tag+'" class="'+(can?'':'blk')+'">'+
+      '<td class="csno">'+t.sno+'</td><td class="ctag">'+t.tag+'</td><td>'+t.article+'</td>'+
+      '<td class="cpur">'+pur+'</td><td class="cwt">'+t.wt+'</td>'+
+      '<td class="chuid '+(can?'':'miss')+'">'+(t.huid||'⚠ missing')+'</td></tr>';
+  }
+  function buildPanel(){ document.getElementById('body1').innerHTML = TAGS.map(rowHTML).join(''); }
+
+  // ---- flow nav ----
+  const flows=[...document.querySelectorAll('.flow')];
+  const steps=[...document.querySelectorAll('.step')];
+  let cur=0;
+  function setStep(n){ steps.forEach((s,i)=>{ s.classList.toggle('active',i===n); s.classList.toggle('done',i<n); }); }
+  function go(n){ flows[cur].classList.remove('on'); cur=n; flows[cur].classList.add('on'); setStep(n); window.scrollTo({top:0,behavior:'smooth'}); if(n===1) setTimeout(()=>document.getElementById('panel1').classList.add('in'),200); }
+  window.go=go;
+
+  // purity gating
+  const purSel=document.getElementById('puritySel');
+  const toTplBtn=document.getElementById('toTplBtn');
+  purSel.addEventListener('change',()=>{
+    buildPanel();
+    const p=purSel.value;
+    const printable=TAGS.filter(t=>t.huid).length;
+    toTplBtn.disabled=!p;
+    toTplBtn.textContent = p ? ('Choose template → ('+printable+' tags)') : 'Select purity first';
+  });
+
+  window.goTemplates=function(){
+    const p=purSel.value; if(!p){ alert('Pehle purity select karo.'); return; }
+    document.getElementById('tplPur').textContent=p;
+    buildCards(); renderFinal();
+    go(2);
+  };
+
+  // print
+  let printed=false;
+  window.runPrint=async function(){
+    if(printed) return; printed=true;
+    const btn=document.getElementById('printSelBtn');
+    btn.disabled=true; btn.textContent='🖨 Printing…';
+    const printable=TAGS.filter(t=>t.huid);
+    for(let i=0;i<printable.length;i++){
+      btn.textContent='🖨 Printing '+(i+1)+' / '+printable.length+'…';
+      await new Promise(r=>setTimeout(r,500));
+    }
+    // render printed tag (tag #20) in step 3
+    renderTag(document.getElementById('printedTag'), sampleData());
+    // set scan purity label
+    document.getElementById('scanPur').textContent = PURLABEL[purSel.value] || '916 · 22K';
+    printed=false;
+    btn.disabled=false; btn.textContent='🖨 Print All Tags (5)';
+    go(3);
+  };
+
+  window.resetFlow=function(){
+    printed=false; selDetail='t1'; selBarcode='b1';
+    document.getElementById('panel1').classList.remove('in');
+    purSel.value='';
+    buildPanel();
+    document.getElementById('st1').textContent='6 tags · 5 ready · 1 missing HUID';
+    toTplBtn.disabled=true; toTplBtn.textContent='Select purity first';
+    go(0);
+  };
+
+  // init
+  buildPanel();
+</script>
+</body>
+</html>
