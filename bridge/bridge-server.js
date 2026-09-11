@@ -54,48 +54,53 @@ function saveMockJob(p, tspl) {
   });
 }
 
-/* 100mm x 15mm tag @203dpi (8 dots/mm):
-   Left details : X 4..250   (32.5mm)
-   Fold + hole  : X 260..540
-   Barcode side : X 545..795 (32.5mm)
-   Y range      : 0..120 dots (15mm)
-   template_detail selects the left-side layout (t1/t2/t3).
-   Serial printed under the barcode. */
+/* 100mm x 15mm tag @203dpi (8 dots/mm). Printable strip = 65mm, laid out as:
+     DETAILS  : X 0..240 dots   (0..30mm)   <- HUID / Weight / Purity
+     gap       : X 240..280      (30..35mm)  <- 5mm fold gap (nothing printed)
+     BARCODE  : X 280..520 dots (35..65mm)  <- Code128 + serial
+   Y range     : 0..120 dots (15mm).
+   Tune the two X anchors below after a test print if the strip is offset. */
+const DET_X = 8;    // details block left edge  (~1mm in)
+const BC_X  = 280;  // barcode block left edge  (35mm)
 function buildTSPL(p) {
   const purMap = { '999':'999 24K','958':'958 23K','916':'916 22K','833':'833 20K','750':'750 18K','585':'585 14K','375':'375 9K' };
   const purity = purMap[p.purity] || p.purity || '';
   const wt = p.weight ? `${p.weight}g` : '';
   const huid = p.huid;
   const serial = p.serial || '';
-  const bc = p.barcode;
+  // Print the HUID as the Code128 payload; 6 chars fit comfortably in 30mm.
+  const bc = huid;
+  const D = DET_X;
 
   let left = '';
-  if (p.template_detail === 't2') {           // Emphasis: centered
+  if (p.template_detail === 't2') {                    // Emphasis: big HUID + centre
     left =
-      `TEXT 10,6,"1",0,1,1,"HUID"\n` +
-      `TEXT 10,22,"3",0,1,1,"${huid}"\n` +
-      `TEXT 10,66,"2",0,1,1,"${wt}  ${purity}"\n`;
-  } else if (p.template_detail === 't3') {    // Grid-ish
+      `TEXT ${D},8,"1",0,1,1,"HUID"\n` +
+      `TEXT ${D},24,"4",0,1,1,"${huid}"\n` +
+      `TEXT ${D},70,"2",0,1,1,"${wt}  ${purity}"\n` +
+      `TEXT ${D},96,"1",0,1,1,"${(p.ahc_name||'').slice(0,24)}"\n`;
+  } else if (p.template_detail === 't3') {             // Grid
     left =
-      `TEXT 6,6,"1",0,1,1,"HUID"\n`   + `TEXT 6,20,"2",0,1,1,"${huid}"\n` +
-      `TEXT 6,54,"1",0,1,1,"WT(g)"\n` + `TEXT 6,68,"2",0,1,1,"${p.weight||''}"\n` +
-      `TEXT 150,54,"1",0,1,1,"PUR"\n`+ `TEXT 150,68,"2",0,1,1,"${p.purity||''}"\n`;
-  } else {                                     // t1 Refined (default)
+      `TEXT ${D},8,"1",0,1,1,"HUID"\n`      + `TEXT ${D},24,"3",0,1,1,"${huid}"\n` +
+      `TEXT ${D},64,"1",0,1,1,"WT(g)"\n`    + `TEXT ${D},80,"2",0,1,1,"${p.weight||''}"\n` +
+      `TEXT ${D+130},64,"1",0,1,1,"PUR"\n`  + `TEXT ${D+130},80,"2",0,1,1,"${p.purity||''}"\n`;
+  } else {                                             // t1 Refined (default)
     left =
-      `TEXT 6,6,"2",0,1,1,"HUID ${huid}"\n` +
-      `BAR 6,34,240,2\n` +
-      `TEXT 6,44,"2",0,1,1,"Wt: ${wt}"\n` +
-      `TEXT 6,74,"2",0,1,1,"Purity: ${purity}"\n`;
+      `TEXT ${D},10,"1",0,1,1,"HUID"\n` +
+      `TEXT ${D},26,"3",0,1,1,"${huid}"\n` +
+      `BAR ${D},58,224,2\n` +
+      `TEXT ${D},66,"1",0,1,1,"Wt"\n`       + `TEXT ${D},82,"2",0,1,1,"${wt}"\n` +
+      `TEXT ${D+130},66,"1",0,1,1,"Purity"\n` + `TEXT ${D+130},82,"2",0,1,1,"${purity}"\n`;
   }
 
-  const scanHint = (p.template_barcode === 'b2') ? `TEXT 560,112,"1",0,1,1,"Scan to verify"\n` : '';
+  const scanHint = (p.template_barcode === 'b2') ? `TEXT ${BC_X},108,"1",0,1,1,"Scan to verify"\n` : '';
 
   return [
     `SIZE 100 mm, 15 mm`, `GAP 2 mm, 0 mm`, `SPEED 4`, `DENSITY 8`,
     `DIRECTION 0`, `REFERENCE 0,0`, `CLS`,
     left,
-    `BARCODE 560,6,"128",70,0,0,2,2,"${bc}"`,
-    `TEXT 560,84,"2",0,1,1,"${serial}"`,
+    `BARCODE ${BC_X},8,"128",64,0,0,2,2,"${bc}"`,
+    `TEXT ${BC_X},80,"2",0,1,1,"${serial}"`,
     scanHint,
     `PRINT 1,1`, ``
   ].join('\n');
