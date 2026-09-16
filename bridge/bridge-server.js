@@ -64,7 +64,8 @@ function saveMockJob(p, tspl) {
 // starts after it. Increase to skip more of the front, decrease to skip less.
 const SKIP_X = 240;            // 30mm blank at the front
 const DET_X  = SKIP_X + 8;     // details block starts just after the skip
-const BC_X   = SKIP_X + 248;   // barcode block, 5mm after the 30mm details
+const BC_X   = SKIP_X + 360;   // QR pushed well past the details, so the
+                               // fold falls in the blank gap, never on the QR
 function buildTSPL(p) {
   const purMap = { '999':'999 24K','958':'958 23K','916':'916 22K','833':'833 20K','750':'750 18K','585':'585 14K','375':'375 9K' };
   const purity = purMap[p.purity] || p.purity || '';
