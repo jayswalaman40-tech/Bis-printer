@@ -100,14 +100,15 @@ function buildTSPL(p) {
   // The printable width is narrow (~11mm), so the QR is kept small (ECC L,
   // ~82 dots) and vertically centered, and the serial is placed AFTER the QR
   // along the length (i.e. below it when the tag hangs) so nothing is clipped.
-  const SERX = BC_X + 96;      // serial column, just past the QR
+  // Bigger QR modules (cell 3) so a phone scans it easily on the small tag.
+  const SERX = BC_X + 120;     // serial column, just past the larger QR
   const scanHint = (p.template_barcode === 'b2') ? `TEXT ${SERX},52,"1",0,1,1,"Scan to verify"\n` : '';
 
   return [
     `SIZE 100 mm, 15 mm`, `GAP 2 mm, 0 mm`, `SPEED 4`, `DENSITY 6`,
     `DIRECTION 0`, `REFERENCE 0,0`, `CLS`,
     left,
-    `QRCODE ${BC_X},0,L,2,A,0,"${url}"`,
+    `QRCODE ${BC_X},0,L,3,A,0,"${url}"`,
     `TEXT ${SERX},36,"1",0,1,1,"${serial}"`,
     scanHint,
     `PRINT 1,1`, ``

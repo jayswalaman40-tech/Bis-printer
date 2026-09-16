@@ -19,7 +19,7 @@ async function verifySignature(q) {
     'raw', enc.encode(SIGN_SECRET),
     { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const buf = await crypto.subtle.sign('HMAC', key, enc.encode(msg));
-  const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+  const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 8);
   return hex === String(q.s);
 }
 
