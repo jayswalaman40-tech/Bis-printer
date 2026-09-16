@@ -62,7 +62,7 @@ function saveMockJob(p, tspl) {
    Tune the two X anchors below after a test print if the strip is offset. */
 // SKIP_X leaves the front of the tag (the narrow neck/head) blank; printing
 // starts after it. Increase to skip more of the front, decrease to skip less.
-const SKIP_X = 240;            // 30mm blank at the front
+const SKIP_X = 320;            // 40mm blank at the front (whole content back)
 const DET_X  = SKIP_X + 8;     // details block starts just after the skip
 const BC_X   = SKIP_X + 360;   // QR pushed well past the details, so the
                                // fold falls in the blank gap, never on the QR
