@@ -90,26 +90,25 @@ function buildTSPL(p) {
       `TEXT ${D},64,"1",0,1,1,"WT(g)"\n`    + `TEXT ${D},80,"2",0,1,1,"${p.weight||''}"\n` +
       `TEXT ${D+130},64,"1",0,1,1,"PUR"\n`  + `TEXT ${D+130},80,"2",0,1,1,"${p.purity||''}"\n`;
   } else {                                             // t1 Refined (default)
+    // Spread the details over the full 15mm height so the top isn't blank.
     left =
-      `TEXT ${D},2,"1",0,1,1,"HUID"\n` +
-      `TEXT ${D},14,"3",0,1,1,"${huid}"\n` +
-      `TEXT ${D},48,"1",0,1,1,"Wt"\n`        + `TEXT ${D},60,"2",0,1,1,"${wt}"\n` +
-      `TEXT ${D+120},48,"1",0,1,1,"Purity"\n` + `TEXT ${D+120},60,"2",0,1,1,"${purity}"\n`;
+      `TEXT ${D},6,"1",0,1,1,"HUID"\n` +
+      `TEXT ${D},20,"4",0,1,1,"${huid}"\n` +
+      `TEXT ${D},70,"1",0,1,1,"Wt"\n`        + `TEXT ${D},84,"2",0,1,1,"${wt}"\n` +
+      `TEXT ${D+120},70,"1",0,1,1,"Purity"\n` + `TEXT ${D+120},84,"2",0,1,1,"${purity}"\n`;
   }
 
-  // The printable width is narrow (~11mm), so the QR is kept small (ECC L,
-  // ~82 dots) and vertically centered, and the serial is placed AFTER the QR
-  // along the length (i.e. below it when the tag hangs) so nothing is clipped.
-  // Bigger QR modules (cell 3) so a phone scans it easily on the small tag.
-  const SERX = BC_X + 120;     // serial column, just past the larger QR
-  const scanHint = (p.template_barcode === 'b2') ? `TEXT ${SERX},52,"1",0,1,1,"Scan to verify"\n` : '';
+  // QR (cell 3, ~12.4mm) centered over the 15mm height so the top isn't blank;
+  // serial sits after the QR along the length.
+  const SERX = BC_X + 120;     // serial column, just past the QR
+  const scanHint = (p.template_barcode === 'b2') ? `TEXT ${SERX},64,"1",0,1,1,"Scan to verify"\n` : '';
 
   return [
     `SIZE 100 mm, 15 mm`, `GAP 2 mm, 0 mm`, `SPEED 4`, `DENSITY 6`,
     `DIRECTION 0`, `REFERENCE 0,0`, `CLS`,
     left,
-    `QRCODE ${BC_X},0,L,3,A,0,"${url}"`,
-    `TEXT ${SERX},36,"1",0,1,1,"${serial}"`,
+    `QRCODE ${BC_X},10,L,3,A,0,"${url}"`,
+    `TEXT ${SERX},48,"1",0,1,1,"${serial}"`,
     scanHint,
     `PRINT 1,1`, ``
   ].join('\n');
