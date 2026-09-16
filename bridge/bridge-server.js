@@ -94,16 +94,15 @@ function buildTSPL(p) {
       `TEXT ${D+130},66,"1",0,1,1,"Purity"\n` + `TEXT ${D+130},82,"2",0,1,1,"${purity}"\n`;
   }
 
-  // QR on the left of the barcode block; serial (and optional hint) to its right.
-  const TX = BC_X + 100;   // text column, right of the QR
-  const scanHint = (p.template_barcode === 'b2') ? `TEXT ${TX},64,"1",0,1,1,"Scan to verify"\n` : '';
+  // QR at the top of the barcode block; serial directly BELOW it (aligned).
+  const scanHint = (p.template_barcode === 'b2') ? `TEXT ${BC_X+100},40,"1",0,1,1,"Scan to verify"\n` : '';
 
   return [
     `SIZE 100 mm, 15 mm`, `GAP 2 mm, 0 mm`, `SPEED 4`, `DENSITY 8`,
     `DIRECTION 0`, `REFERENCE 0,0`, `CLS`,
     left,
-    `QRCODE ${BC_X},14,M,2,A,0,"${url}"`,
-    `TEXT ${TX},44,"1",0,1,1,"${serial}"`,
+    `QRCODE ${BC_X},2,M,2,A,0,"${url}"`,
+    `TEXT ${BC_X},96,"1",0,1,1,"${serial}"`,
     scanHint,
     `PRINT 1,1`, ``
   ].join('\n');
