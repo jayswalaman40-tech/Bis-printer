@@ -68,48 +68,78 @@ const BC_X   = SKIP_X + 264;   // QR after the details; leaves room for the
                                // serial to sit after the QR before the tail end
 function buildTSPL(p) {
   const purMap = { '999':'999 24K','958':'958 23K','916':'916 22K','833':'833 20K','750':'750 18K','585':'585 14K','375':'375 9K' };
-  const purity = purMap[p.purity] || p.purity || '';
-  const wt = p.weight ? `${p.weight}g` : '';
-  const huid = p.huid;
-  const serial = p.serial || '';
-  // The barcode side is a QR of the signed verification URL, so a phone scan
-  // opens the detail page directly. Fall back to the HUID if no URL is sent.
+  const clean  = (v) => ((v == null ? '' : '' + v).replace(/"/g, '').trim());
+  const purity = purMap[p.purity] || clean(p.purity);
+  const huid   = clean(p.huid);
+  const serial = clean(p.serial);
+  const article= clean(p.article).toUpperCase().slice(0, 20);
+  const centre = clean(p.ahc_name).toUpperCase().slice(0, 28);
+  // Weight always shown to 3 decimals.
+  const wn = parseFloat(p.weight);
+  const w3 = isFinite(wn) ? wn.toFixed(3) : clean(p.weight);
+  const wtg = w3 ? `${w3}g` : '';
+  // QR = signed verification URL (fallback to HUID).
   const url = p.detail_url || `HD-${huid}`;
-  const D = DET_X;
 
+  const L  = DET_X;            // details left edge
+  const RP = L + 150;          // purity column
+  const DIV = BC_X - 14;       // vertical divider just before the QR
+  const BOXL = SKIP_X, BOXR = 776, BOXT = 4, BOXB = 114;
+  const QX = BC_X, SX = BC_X + 120;   // QR and serial X
+
+  const d = p.template_detail;
   let left = '';
-  if (p.template_detail === 't2') {                    // Emphasis: big HUID + centre
-    left =
-      `TEXT ${D},8,"1",0,1,1,"HUID"\n` +
-      `TEXT ${D},24,"4",0,1,1,"${huid}"\n` +
-      `TEXT ${D},70,"2",0,1,1,"${wt}  ${purity}"\n` +
-      `TEXT ${D},96,"1",0,1,1,"${(p.ahc_name||'').slice(0,24)}"\n`;
-  } else if (p.template_detail === 't3') {             // Grid
-    left =
-      `TEXT ${D},8,"1",0,1,1,"HUID"\n`      + `TEXT ${D},24,"3",0,1,1,"${huid}"\n` +
-      `TEXT ${D},64,"1",0,1,1,"WT(g)"\n`    + `TEXT ${D},80,"2",0,1,1,"${p.weight||''}"\n` +
-      `TEXT ${D+130},64,"1",0,1,1,"PUR"\n`  + `TEXT ${D+130},80,"2",0,1,1,"${p.purity||''}"\n`;
-  } else {                                             // t1 Refined (default)
-    // Spread the details over the full 15mm height so the top isn't blank.
-    left =
-      `TEXT ${D},6,"1",0,1,1,"HUID"\n` +
-      `TEXT ${D},20,"4",0,1,1,"${huid}"\n` +
-      `TEXT ${D},70,"1",0,1,1,"Wt"\n`        + `TEXT ${D},84,"2",0,1,1,"${wt}"\n` +
-      `TEXT ${D+120},70,"1",0,1,1,"Purity"\n` + `TEXT ${D+120},84,"2",0,1,1,"${purity}"\n`;
-  }
 
-  // QR (cell 3, ~12.4mm) centered over the 15mm height so the top isn't blank;
-  // serial sits after the QR along the length.
-  const SERX = BC_X + 120;     // serial column, just past the QR
-  const scanHint = (p.template_barcode === 'b2') ? `TEXT ${SERX},64,"1",0,1,1,"Scan to verify"\n` : '';
+  if (d === 'd2') {            // Header bar: centre name in a black strip on top
+    left =
+      `BAR ${BOXL},4,${DIV-BOXL},28\n` +
+      `TEXT ${L},9,"1",0,1,1,"${centre}"\n` +
+      `REVERSE ${BOXL},4,${DIV-BOXL},28\n` +
+      `TEXT ${L},40,"1",0,1,1,"HUID"\n` +
+      `TEXT ${L},54,"3",0,1,1,"${huid}"\n` +
+      `TEXT ${L},90,"1",0,1,1,"${article}  ${wtg}  ${purity}"\n`;
+  } else if (d === 'd3') {     // Big HUID emphasis
+    left =
+      `TEXT ${L},6,"1",0,1,1,"${centre}"\n` +
+      `TEXT ${L},18,"4",0,1,1,"${huid}"\n` +
+      `TEXT ${L},70,"1",0,1,1,"${article}"\n` +
+      `TEXT ${L},92,"1",0,1,1,"Wt ${wtg}   ${purity}"\n` +
+      `BAR ${DIV},6,2,104\n`;
+  } else if (d === 'd4') {     // Labeled grid inside a box
+    left =
+      `BOX ${BOXL},${BOXT},${BOXR},${BOXB},2\n` +
+      `TEXT ${L},10,"1",0,1,1,"${centre}"\n` +
+      `BAR ${L},26,236,2\n` +
+      `TEXT ${L},34,"1",0,1,1,"HUID"\n`  + `TEXT ${L+70},32,"2",0,1,1,"${huid}"\n` +
+      `TEXT ${L},58,"1",0,1,1,"ART"\n`   + `TEXT ${L+70},58,"1",0,1,1,"${article}"\n` +
+      `TEXT ${L},78,"1",0,1,1,"WT"\n`    + `TEXT ${L+70},76,"2",0,1,1,"${wtg}"\n` +
+      `TEXT ${L},98,"1",0,1,1,"PUR"\n`   + `TEXT ${L+70},96,"2",0,1,1,"${purity}"\n` +
+      `BAR ${DIV},${BOXT+2},2,${BOXB-BOXT-4}\n`;
+  } else if (d === 'd5') {     // Minimal clean
+    left =
+      `TEXT ${L},8,"1",0,1,1,"${centre}"\n` +
+      `TEXT ${L},20,"4",0,1,1,"${huid}"\n` +
+      `BAR ${L},58,236,2\n` +
+      `TEXT ${L},72,"1",0,1,1,"${article}"\n` +
+      `TEXT ${L},92,"2",0,1,1,"${wtg}   ${purity}"\n`;
+  } else {                     // d1 (default): bordered grid
+    left =
+      `BOX ${BOXL},${BOXT},${BOXR},${BOXB},2\n` +
+      `BAR ${DIV},${BOXT+2},2,${BOXB-BOXT-4}\n` +
+      `TEXT ${L},10,"1",0,1,1,"HUID"\n` +
+      `TEXT ${L},24,"3",0,1,1,"${huid}"\n` +
+      `TEXT ${L},56,"1",0,1,1,"${article}"\n` +
+      `TEXT ${L},78,"1",0,1,1,"Wt ${wtg}"\n` + `TEXT ${RP},78,"1",0,1,1,"${purity}"\n` +
+      `TEXT ${L},98,"1",0,1,1,"${centre}"\n`;
+  }
 
   return [
     `SIZE 100 mm, 18 mm`, `GAP 0 mm, 0 mm`, `SPEED 4`, `DENSITY 6`,
     `DIRECTION 0`, `REFERENCE 0,0`, `CLS`,
     left,
-    `QRCODE ${BC_X},10,L,3,A,0,"${url}"`,
-    `TEXT ${SERX},48,"1",0,1,1,"${serial}"`,
-    scanHint,
+    `QRCODE ${QX},10,L,3,A,0,"${url}"`,
+    `TEXT ${SX},52,"1",0,1,1,"${serial}"`,
+    `TEXT ${SX},70,"1",0,1,1,"Scan to verify"`,
     `PRINT 1,1`, ``
   ].join('\n');
 }

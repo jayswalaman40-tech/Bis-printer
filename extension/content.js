@@ -113,7 +113,7 @@
   }
 
   // ---- payload for one tag ----
-  async function buildPayload(tag, jobcardNo, purityCode, templateDetail, templateBarcode) {
+  async function buildPayload(tag, jobcardNo, purityCode, templateDetail) {
     const serial = serialFor(jobcardNo, tag.tag_id);
     // Keep the URL short (only h/w/p/s) so the printed QR stays coarse enough
     // to scan on the narrow tag. The centre name lives on the website.
@@ -122,10 +122,10 @@
     const qs = new URLSearchParams({ ...params, s }).toString();
     return {
       huid: tag.huid, weight: tag.weight, purity: purityCode,
+      article: tag.article,
       serial, barcode: `HD-${tag.huid}`,
       ahc_name: TAG_CONFIG.AHC_NAME,
-      template_detail: templateDetail,      // 't1' | 't2' | 't3'
-      template_barcode: templateBarcode,    // 'b1' | 'b2'
+      template_detail: templateDetail,      // 'd1'..'d5'
       detail_url: `${TAG_CONFIG.DETAIL_BASE}?${qs}`
     };
   }
@@ -147,8 +147,7 @@
 
   // ---- state ----
   let selPurity  = '';
-  let selDetail  = 't1';   // default (recommended)
-  let selBarcode = 'b1';
+  let selDetail  = 'd1';   // default design (recommended)
 
   // ---- build panel ----
   const panel = document.createElement('div');
@@ -244,20 +243,51 @@
   }
 
   // ---- template modal ----
+  // Weight always shown to 3 decimals in previews (matches the printed tag).
+  function wt3(v) { const n = parseFloat(v); return isFinite(n) ? n.toFixed(3) : (v || '0.000'); }
+
+  // Self-contained (inline-styled) previews of the 5 printed designs d1..d5.
+  // Each shows Article, HUID, Weight (3-dec), Purity and Centre name so the
+  // operator can judge the tag before printing. Layouts mirror the bridge's
+  // buildTSPL output for each design id.
   function detailPreviewHTML(tpl, d) {
-    if (tpl === 't1') return `<div class="ds ds-t1">
-      <div class="h"><span class="hk">HUID</span><span class="hv">${d.huid}</span></div>
-      <div class="rule"></div>
-      <div class="r"><span class="k">Weight</span><span class="v">${d.wt} g</span></div>
-      <div class="r"><span class="k">Purity</span><span class="v">${d.pur}</span></div></div>`;
-    if (tpl === 't2') return `<div class="ds ds-t2">
-      <div class="hk">HUID</div><div class="hv">${d.huid}</div>
-      <div class="sub">${d.wt} g&nbsp;·&nbsp;${d.pur}</div>
-      <div class="ahc">${TAG_CONFIG.AHC_NAME}</div></div>`;
-    return `<div class="ds ds-t3">
-      <div class="cell"><div class="k">HUID</div><div class="v">${d.huid}</div></div>
-      <div class="cell"><div class="k">Wt(g)</div><div class="v sm">${d.wt}</div></div>
-      <div class="cell"><div class="k">Purity</div><div class="v sm">${d.purCode}</div></div></div>`;
+    const art = (d.article || '—').toUpperCase();
+    const ctr = TAG_CONFIG.AHC_NAME.toUpperCase();
+    const w = wt3(d.wt);
+    const wrap = 'font-family:Arial,Helvetica,sans-serif;color:#111;box-sizing:border-box;width:100%;height:100%;background:#fff;';
+    if (tpl === 'd1') return `<div style="${wrap}border:1.5px solid #111;padding:5px 7px;">
+      <div style="font-size:8px;letter-spacing:.5px;color:#555;">HUID</div>
+      <div style="font-size:15px;font-weight:700;letter-spacing:.5px;line-height:1.1;">${d.huid}</div>
+      <div style="font-size:9px;font-weight:600;margin-top:4px;">${art}</div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;font-weight:600;margin-top:2px;">
+        <span>Wt ${w}g</span><span>${d.purCode}</span></div>
+      <div style="font-size:7px;color:#555;margin-top:3px;letter-spacing:.3px;">${ctr}</div></div>`;
+    if (tpl === 'd2') return `<div style="${wrap}border:1px solid #111;overflow:hidden;">
+      <div style="background:#111;color:#fff;font-size:7.5px;font-weight:700;letter-spacing:.4px;padding:3px 6px;">${ctr}</div>
+      <div style="padding:4px 7px;">
+        <div style="font-size:8px;color:#555;">HUID</div>
+        <div style="font-size:15px;font-weight:700;line-height:1.1;">${d.huid}</div>
+        <div style="font-size:9px;font-weight:600;margin-top:4px;">${art} &nbsp; ${w}g &nbsp; ${d.purCode}</div></div></div>`;
+    if (tpl === 'd3') return `<div style="${wrap}border-left:3px solid #111;padding:5px 8px;">
+      <div style="font-size:7.5px;color:#555;letter-spacing:.4px;">${ctr}</div>
+      <div style="font-size:20px;font-weight:800;letter-spacing:.5px;line-height:1.05;margin-top:1px;">${d.huid}</div>
+      <div style="font-size:9px;font-weight:600;margin-top:5px;">${art}</div>
+      <div style="font-size:9px;font-weight:600;margin-top:1px;">Wt ${w}g &nbsp; ${d.purCode}</div></div>`;
+    if (tpl === 'd4') return `<div style="${wrap}border:1.5px solid #111;padding:4px 7px;">
+      <div style="font-size:7.5px;font-weight:700;color:#555;letter-spacing:.4px;">${ctr}</div>
+      <div style="border-top:1px solid #111;margin:3px 0;"></div>
+      <table style="width:100%;border-collapse:collapse;font-size:9px;">
+        <tr><td style="color:#555;width:34px;">HUID</td><td style="font-weight:700;">${d.huid}</td></tr>
+        <tr><td style="color:#555;">ART</td><td style="font-weight:600;">${art}</td></tr>
+        <tr><td style="color:#555;">WT</td><td style="font-weight:600;">${w}g</td></tr>
+        <tr><td style="color:#555;">PUR</td><td style="font-weight:600;">${d.purCode}</td></tr></table></div>`;
+    // d5 minimal clean
+    return `<div style="${wrap}padding:6px 8px;">
+      <div style="font-size:7.5px;color:#555;letter-spacing:.4px;">${ctr}</div>
+      <div style="font-size:19px;font-weight:800;letter-spacing:.5px;line-height:1.05;margin-top:1px;">${d.huid}</div>
+      <div style="border-top:1px solid #111;margin:5px 0 4px;"></div>
+      <div style="font-size:9px;font-weight:600;">${art}</div>
+      <div style="font-size:9px;font-weight:600;margin-top:1px;">${w}g &nbsp; ${d.purCode}</div></div>`;
   }
 
   function openTemplateModal() {
@@ -265,7 +295,7 @@
     const sample = (() => {
       const t = data.tags.find(x => x.canPrint) || data.tags[0];
       return { huid: t.huid || '------', wt: t.weight || '0.000',
-        pur: PURITY_LABEL[selPurity], purCode: selPurity,
+        article: t.article || '', pur: PURITY_LABEL[selPurity], purCode: selPurity,
         serial: serialFor(data.jobcardNo, t.tag_id) };
     })();
 
@@ -281,10 +311,8 @@
           <button class="htp-modal-x">&times;</button>
         </div>
         <div class="htp-modal-body">
-          <p class="htp-sec">Details side</p>
+          <p class="htp-sec">Choose a design (all show Article · HUID · Weight · Purity · QR · Centre)</p>
           <div class="htp-cards htp-cards-3" id="htpDetailCards"></div>
-          <p class="htp-sec">Barcode side</p>
-          <div class="htp-cards htp-cards-2" id="htpBarcodeCards"></div>
           <p class="htp-sec">Live preview</p>
           <div class="htp-final" id="htpFinal"></div>
         </div>
@@ -295,8 +323,13 @@
       </div>`;
     document.body.appendChild(overlay);
 
-    const detailDefs  = [ {id:'t1',name:'Refined',rec:true}, {id:'t2',name:'Emphasis'}, {id:'t3',name:'Grid'} ];
-    const barcodeDefs = [ {id:'b1',name:'Serial only'}, {id:'b2',name:'Serial + scan hint'} ];
+    const detailDefs = [
+      {id:'d1',name:'Bordered grid',rec:true},
+      {id:'d2',name:'Header bar'},
+      {id:'d3',name:'Big HUID'},
+      {id:'d4',name:'Labeled box'},
+      {id:'d5',name:'Minimal'},
+    ];
 
     function paintCards() {
       overlay.querySelector('#htpDetailCards').innerHTML = detailDefs.map(c => `
@@ -304,14 +337,7 @@
           <div class="htp-card-top"><span>${c.name}</span>${c.rec?'<em>Recommended</em>':'<i class="chk"></i>'}</div>
           <div class="htp-card-prev">${detailPreviewHTML(c.id, sample)}</div>
         </div>`).join('');
-      overlay.querySelector('#htpBarcodeCards').innerHTML = barcodeDefs.map(c => `
-        <div class="htp-card ${selBarcode===c.id?'sel':''}" data-b="${c.id}">
-          <div class="htp-card-top"><span>${c.name}</span><i class="chk"></i></div>
-          <div class="htp-card-prev"><div class="bs">${qrPreviewSVG(48)}
-            <div class="serial">${sample.serial}</div>${c.id==='b2'?'<div class="scan">Scan to verify</div>':''}</div></div>
-        </div>`).join('');
       overlay.querySelectorAll('[data-d]').forEach(el => el.onclick = () => { selDetail = el.dataset.d; paintCards(); paintFinal(); });
-      overlay.querySelectorAll('[data-b]').forEach(el => el.onclick = () => { selBarcode = el.dataset.b; paintCards(); paintFinal(); });
     }
     function paintFinal() {
       overlay.querySelector('#htpFinal').innerHTML = `
@@ -319,7 +345,7 @@
           <div class="htp-tag-l">${detailPreviewHTML(selDetail, sample)}</div>
           <div class="htp-tag-fold"><div class="htp-tag-hole"></div></div>
           <div class="htp-tag-r">${qrPreviewSVG(60)}
-            <div class="serial">${sample.serial}</div>${selBarcode==='b2'?'<div class="scan">Scan to verify</div>':''}</div>
+            <div class="serial">${sample.serial}</div><div class="scan">Scan to verify</div></div>
         </div>`;
     }
     paintCards(); paintFinal();
@@ -352,7 +378,7 @@
       const tag = printable[i];
       statusEl.textContent = `Printing ${i+1} / ${printable.length} — Tag #${tag.tag_id}`;
       try {
-        await sendPrint(await buildPayload(tag, data.jobcardNo, selPurity, selDetail, selBarcode));
+        await sendPrint(await buildPayload(tag, data.jobcardNo, selPurity, selDetail));
         ok++;
       } catch (e) {
         fail++; lastErr = (e && e.message) ? e.message : String(e);
