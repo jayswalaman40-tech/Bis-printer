@@ -107,7 +107,7 @@ function buildTSPL(p) {
     `SIZE 100 mm, 15 mm`, `GAP 2 mm, 0 mm`, `SPEED 4`, `DENSITY 8`,
     `DIRECTION 0`, `REFERENCE 0,0`, `CLS`,
     left,
-    `QRCODE ${BC_X},3,L,2,A,0,"${url}"`,
+    `QRCODE ${BC_X},0,L,2,A,0,"${url}"`,
     `TEXT ${SERX},36,"1",0,1,1,"${serial}"`,
     scanHint,
     `PRINT 1,1`, ``
