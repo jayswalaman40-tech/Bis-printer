@@ -104,7 +104,7 @@ function buildTSPL(p) {
   const scanHint = (p.template_barcode === 'b2') ? `TEXT ${SERX},64,"1",0,1,1,"Scan to verify"\n` : '';
 
   return [
-    `SIZE 100 mm, 15 mm`, `GAP 2 mm, 0 mm`, `SPEED 4`, `DENSITY 6`,
+    `SIZE 100 mm, 15 mm`, `GAP 0 mm, 0 mm`, `SPEED 4`, `DENSITY 6`,
     `DIRECTION 0`, `REFERENCE 0,0`, `CLS`,
     left,
     `QRCODE ${BC_X},10,L,3,A,0,"${url}"`,
