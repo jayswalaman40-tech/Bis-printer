@@ -13,7 +13,7 @@ const SIGN_SECRET = 'hd-d081b74809f6507741bcceb5c6783dea';
 // Recompute the tag signature the extension put in ?s= and compare.
 async function verifySignature(q) {
   if (!q.s) return false;
-  const msg = [q.h || '', q.w || '', q.p || '', q.ac || '', q.dt || ''].join('|');
+  const msg = [q.h || '', q.w || '', q.p || ''].join('|');
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
     'raw', enc.encode(SIGN_SECRET),
@@ -36,7 +36,7 @@ export default function TagDetailPage() {
     verifySignature(q).then((valid) => {
       if (!valid) { setTampered(true); setReady(true); return; }
       setData({ huid:q.h||'', weight:q.w||'', purity:q.p||'',
-        ahc_name:q.ac||'Assaying & Hallmarking Centre', print_date:q.dt||'' });
+        ahc_name:q.ac||'Jaliyan Hallmarking Center', print_date:q.dt||'' });
       setReady(true);
     });
   }, [router.isReady, router.query]);

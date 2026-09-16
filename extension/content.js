@@ -103,7 +103,7 @@
   // Signs the tag's values so the verification page can reject edited URLs.
   // The canonical string and secret MUST match the website's verifier.
   async function signParams(p) {
-    const msg = [p.h, p.w, p.p, p.ac, p.dt].join('|');
+    const msg = [p.h, p.w, p.p].join('|');
     const enc = new TextEncoder();
     const key = await crypto.subtle.importKey(
       'raw', enc.encode(TAG_CONFIG.SIGN_SECRET),
@@ -115,10 +115,9 @@
   // ---- payload for one tag ----
   async function buildPayload(tag, jobcardNo, purityCode, templateDetail, templateBarcode) {
     const serial = serialFor(jobcardNo, tag.tag_id);
-    const params = {
-      h: tag.huid, w: tag.weight, p: purityCode,
-      ac: TAG_CONFIG.AHC_NAME, dt: new Date().toISOString().slice(0, 10)
-    };
+    // Keep the URL short (only h/w/p/s) so the printed QR stays coarse enough
+    // to scan on the narrow tag. The centre name lives on the website.
+    const params = { h: tag.huid, w: tag.weight, p: purityCode };
     const s = await signParams(params);
     const qs = new URLSearchParams({ ...params, s }).toString();
     return {
