@@ -223,6 +223,27 @@
   purSel.onchange = () => { selPurity = purSel.value; refresh(); };
   nextBtn.onclick = () => openTemplateModal();
 
+  // A QR-looking preview (illustrative only; the real scannable QR is printed
+  // by the bridge). Deterministic pattern with three finder squares.
+  function qrPreviewSVG(px) {
+    const n = 21, cell = px / n;
+    let seed = 20260916, rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    let cells = '';
+    const finder = (ox, oy) => {
+      for (let i = 0; i < 7; i++) for (let j = 0; j < 7; j++) {
+        if (i === 0 || i === 6 || j === 0 || j === 6 || (i >= 2 && i <= 4 && j >= 2 && j <= 4))
+          cells += `<rect x="${(ox + j) * cell}" y="${(oy + i) * cell}" width="${cell}" height="${cell}"/>`;
+      }
+    };
+    finder(0, 0); finder(n - 7, 0); finder(0, n - 7);
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+      const inFinder = (r < 8 && c < 8) || (r < 8 && c >= n - 8) || (r >= n - 8 && c < 8);
+      if (!inFinder && rnd() > 0.5)
+        cells += `<rect x="${c * cell}" y="${r * cell}" width="${cell}" height="${cell}"/>`;
+    }
+    return `<svg width="${px}" height="${px}" viewBox="0 0 ${px} ${px}" xmlns="http://www.w3.org/2000/svg" style="display:block"><rect width="${px}" height="${px}" fill="#fff"/><g fill="#1B2430">${cells}</g></svg>`;
+  }
+
   // ---- template modal ----
   function detailPreviewHTML(tpl, d) {
     if (tpl === 't1') return `<div class="ds ds-t1">
@@ -287,7 +308,7 @@
       overlay.querySelector('#htpBarcodeCards').innerHTML = barcodeDefs.map(c => `
         <div class="htp-card ${selBarcode===c.id?'sel':''}" data-b="${c.id}">
           <div class="htp-card-top"><span>${c.name}</span><i class="chk"></i></div>
-          <div class="htp-card-prev"><div class="bs"><div class="mini-bars"></div>
+          <div class="htp-card-prev"><div class="bs">${qrPreviewSVG(48)}
             <div class="serial">${sample.serial}</div>${c.id==='b2'?'<div class="scan">Scan to verify</div>':''}</div></div>
         </div>`).join('');
       overlay.querySelectorAll('[data-d]').forEach(el => el.onclick = () => { selDetail = el.dataset.d; paintCards(); paintFinal(); });
@@ -298,7 +319,7 @@
         <div class="htp-tag">
           <div class="htp-tag-l">${detailPreviewHTML(selDetail, sample)}</div>
           <div class="htp-tag-fold"><div class="htp-tag-hole"></div></div>
-          <div class="htp-tag-r"><div class="mini-bars big"></div>
+          <div class="htp-tag-r">${qrPreviewSVG(60)}
             <div class="serial">${sample.serial}</div>${selBarcode==='b2'?'<div class="scan">Scan to verify</div>':''}</div>
         </div>`;
     }
