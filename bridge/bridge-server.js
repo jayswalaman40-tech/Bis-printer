@@ -64,8 +64,8 @@ function saveMockJob(p, tspl) {
 // starts after it. Increase to skip more of the front, decrease to skip less.
 const SKIP_X = 296;            // front blank (whole content moved 3mm toward head)
 const DET_X  = SKIP_X + 8;     // details block starts just after the skip
-const BC_X   = SKIP_X + 320;   // QR after the details (moved 5mm toward head);
-                               // the fold still falls in the blank gap, not on QR
+const BC_X   = SKIP_X + 264;   // QR after the details; leaves room for the
+                               // serial to sit after the QR before the tail end
 function buildTSPL(p) {
   const purMap = { '999':'999 24K','958':'958 23K','916':'916 22K','833':'833 20K','750':'750 18K','585':'585 14K','375':'375 9K' };
   const purity = purMap[p.purity] || p.purity || '';
@@ -91,21 +91,24 @@ function buildTSPL(p) {
       `TEXT ${D+130},64,"1",0,1,1,"PUR"\n`  + `TEXT ${D+130},80,"2",0,1,1,"${p.purity||''}"\n`;
   } else {                                             // t1 Refined (default)
     left =
-      `TEXT ${D},6,"1",0,1,1,"HUID"\n` +
-      `TEXT ${D},20,"3",0,1,1,"${huid}"\n` +
-      `TEXT ${D},54,"1",0,1,1,"Wt"\n`        + `TEXT ${D},68,"2",0,1,1,"${wt}"\n` +
-      `TEXT ${D+120},54,"1",0,1,1,"Purity"\n` + `TEXT ${D+120},68,"2",0,1,1,"${purity}"\n`;
+      `TEXT ${D},2,"1",0,1,1,"HUID"\n` +
+      `TEXT ${D},14,"3",0,1,1,"${huid}"\n` +
+      `TEXT ${D},48,"1",0,1,1,"Wt"\n`        + `TEXT ${D},60,"2",0,1,1,"${wt}"\n` +
+      `TEXT ${D+120},48,"1",0,1,1,"Purity"\n` + `TEXT ${D+120},60,"2",0,1,1,"${purity}"\n`;
   }
 
-  // QR at the top of the barcode block; serial directly BELOW it (aligned).
-  const scanHint = (p.template_barcode === 'b2') ? `TEXT ${BC_X+100},40,"1",0,1,1,"Scan to verify"\n` : '';
+  // The printable width is narrow (~11mm), so the QR is kept small (ECC L,
+  // ~82 dots) and vertically centered, and the serial is placed AFTER the QR
+  // along the length (i.e. below it when the tag hangs) so nothing is clipped.
+  const SERX = BC_X + 96;      // serial column, just past the QR
+  const scanHint = (p.template_barcode === 'b2') ? `TEXT ${SERX},52,"1",0,1,1,"Scan to verify"\n` : '';
 
   return [
     `SIZE 100 mm, 15 mm`, `GAP 2 mm, 0 mm`, `SPEED 4`, `DENSITY 8`,
     `DIRECTION 0`, `REFERENCE 0,0`, `CLS`,
     left,
-    `QRCODE ${BC_X},2,M,2,A,0,"${url}"`,
-    `TEXT ${BC_X},96,"1",0,1,1,"${serial}"`,
+    `QRCODE ${BC_X},3,L,2,A,0,"${url}"`,
+    `TEXT ${SERX},36,"1",0,1,1,"${serial}"`,
     scanHint,
     `PRINT 1,1`, ``
   ].join('\n');
