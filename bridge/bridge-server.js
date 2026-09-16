@@ -60,7 +60,7 @@ function saveMockJob(p, tspl) {
      BARCODE  : X 280..520 dots (35..65mm)  <- Code128 + serial
    Y range     : 0..120 dots (15mm).
    Tune the two X anchors below after a test print if the strip is offset. */
-const DET_X = 8;    // details block left edge  (~1mm in)
+const DET_X = 40;   // details block left edge  (~5mm in, off the tail tip)
 const BC_X  = 280;  // barcode block left edge  (35mm)
 function buildTSPL(p) {
   const purMap = { '999':'999 24K','958':'958 23K','916':'916 22K','833':'833 20K','750':'750 18K','585':'585 14K','375':'375 9K' };
@@ -87,11 +87,10 @@ function buildTSPL(p) {
       `TEXT ${D+130},64,"1",0,1,1,"PUR"\n`  + `TEXT ${D+130},80,"2",0,1,1,"${p.purity||''}"\n`;
   } else {                                             // t1 Refined (default)
     left =
-      `TEXT ${D},10,"1",0,1,1,"HUID"\n` +
-      `TEXT ${D},26,"3",0,1,1,"${huid}"\n` +
-      `BAR ${D},58,224,2\n` +
-      `TEXT ${D},66,"1",0,1,1,"Wt"\n`       + `TEXT ${D},82,"2",0,1,1,"${wt}"\n` +
-      `TEXT ${D+130},66,"1",0,1,1,"Purity"\n` + `TEXT ${D+130},82,"2",0,1,1,"${purity}"\n`;
+      `TEXT ${D},6,"1",0,1,1,"HUID"\n` +
+      `TEXT ${D},20,"3",0,1,1,"${huid}"\n` +
+      `TEXT ${D},54,"1",0,1,1,"Wt"\n`        + `TEXT ${D},68,"2",0,1,1,"${wt}"\n` +
+      `TEXT ${D+120},54,"1",0,1,1,"Purity"\n` + `TEXT ${D+120},68,"2",0,1,1,"${purity}"\n`;
   }
 
   // QR at the top of the barcode block; serial directly BELOW it (aligned).
