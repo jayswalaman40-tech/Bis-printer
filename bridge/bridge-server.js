@@ -81,65 +81,65 @@ function buildTSPL(p) {
   // QR = signed verification URL (fallback to HUID).
   const url = p.detail_url || `HD-${huid}`;
 
-  const L  = DET_X;            // details left edge
+  // Layout zones (dots). The QR needs a clean white "quiet zone" all around
+  // it or scanners fail — so NOTHING (no box, no bar, no text) may be drawn
+  // inside the QR band. The details side is kept strictly left of DET_MAX,
+  // leaving a white gap before the QR at BC_X.
+  const L  = DET_X;            // details left edge (304)
   const RP = L + 150;          // purity column
-  const DIV = BC_X - 14;       // vertical divider just before the QR
-  const BOXL = SKIP_X, BOXR = 776, BOXT = 4, BOXB = 114;
-  const QX = BC_X, SX = BC_X + 120;   // QR and serial X
+  const DET_MAX = BC_X - 20;   // details must end before here (quiet zone)
+  const LW = DET_MAX - L;      // width available for a left-side underline
+  const QX = BC_X;             // QR left edge (560)  — clean band, no borders
+  const SX = BC_X + 116;       // serial sits to the RIGHT of the QR, with a gap
 
   const d = p.template_detail;
   let left = '';
 
-  if (d === 'd2') {            // Header bar: centre name in a black strip on top
+  // Each design varies ONLY the details (left) side. No element crosses into
+  // the QR band, so every design scans and none gets clipped at the edges.
+  if (d === 'd2') {            // Header emphasis: centre name + underline
     left =
-      `BAR ${BOXL},4,${DIV-BOXL},28\n` +
-      `TEXT ${L},9,"1",0,1,1,"${centre}"\n` +
-      `REVERSE ${BOXL},4,${DIV-BOXL},28\n` +
-      `TEXT ${L},40,"1",0,1,1,"HUID"\n` +
-      `TEXT ${L},54,"3",0,1,1,"${huid}"\n` +
-      `TEXT ${L},90,"1",0,1,1,"${article}  ${wtg}  ${purity}"\n`;
+      `TEXT ${L},6,"1",0,1,1,"${centre}"\n` +
+      `BAR ${L},22,${LW},2\n` +
+      `TEXT ${L},30,"1",0,1,1,"HUID"\n` +
+      `TEXT ${L},44,"3",0,1,1,"${huid}"\n` +
+      `TEXT ${L},86,"1",0,1,1,"${article}  ${wtg}  ${purity}"\n`;
   } else if (d === 'd3') {     // Big HUID emphasis
     left =
       `TEXT ${L},6,"1",0,1,1,"${centre}"\n` +
-      `TEXT ${L},18,"4",0,1,1,"${huid}"\n` +
-      `TEXT ${L},70,"1",0,1,1,"${article}"\n` +
-      `TEXT ${L},92,"1",0,1,1,"Wt ${wtg}   ${purity}"\n` +
-      `BAR ${DIV},6,2,104\n`;
-  } else if (d === 'd4') {     // Labeled grid inside a box
+      `TEXT ${L},20,"4",0,1,1,"${huid}"\n` +
+      `TEXT ${L},74,"1",0,1,1,"${article}"\n` +
+      `TEXT ${L},94,"1",0,1,1,"Wt ${wtg}   ${purity}"\n`;
+  } else if (d === 'd4') {     // Labeled rows (no enclosing box)
     left =
-      `BOX ${BOXL},${BOXT},${BOXR},${BOXB},2\n` +
-      `TEXT ${L},10,"1",0,1,1,"${centre}"\n` +
-      `BAR ${L},26,236,2\n` +
-      `TEXT ${L},34,"1",0,1,1,"HUID"\n`  + `TEXT ${L+70},32,"2",0,1,1,"${huid}"\n` +
-      `TEXT ${L},58,"1",0,1,1,"ART"\n`   + `TEXT ${L+70},58,"1",0,1,1,"${article}"\n` +
-      `TEXT ${L},78,"1",0,1,1,"WT"\n`    + `TEXT ${L+70},76,"2",0,1,1,"${wtg}"\n` +
-      `TEXT ${L},98,"1",0,1,1,"PUR"\n`   + `TEXT ${L+70},96,"2",0,1,1,"${purity}"\n` +
-      `BAR ${DIV},${BOXT+2},2,${BOXB-BOXT-4}\n`;
+      `TEXT ${L},6,"1",0,1,1,"${centre}"\n` +
+      `BAR ${L},20,${LW},2\n` +
+      `TEXT ${L},28,"1",0,1,1,"HUID"\n` + `TEXT ${L+66},26,"2",0,1,1,"${huid}"\n` +
+      `TEXT ${L},52,"1",0,1,1,"ART"\n`  + `TEXT ${L+66},52,"1",0,1,1,"${article}"\n` +
+      `TEXT ${L},72,"1",0,1,1,"WT"\n`   + `TEXT ${L+66},70,"2",0,1,1,"${wtg}"\n` +
+      `TEXT ${L},94,"1",0,1,1,"PUR"\n`  + `TEXT ${L+66},94,"1",0,1,1,"${purity}"\n`;
   } else if (d === 'd5') {     // Minimal clean
     left =
-      `TEXT ${L},8,"1",0,1,1,"${centre}"\n` +
-      `TEXT ${L},20,"4",0,1,1,"${huid}"\n` +
-      `BAR ${L},58,236,2\n` +
-      `TEXT ${L},72,"1",0,1,1,"${article}"\n` +
-      `TEXT ${L},92,"2",0,1,1,"${wtg}   ${purity}"\n`;
-  } else {                     // d1 (default): bordered grid
+      `TEXT ${L},10,"1",0,1,1,"${centre}"\n` +
+      `TEXT ${L},24,"4",0,1,1,"${huid}"\n` +
+      `TEXT ${L},84,"1",0,1,1,"${article}   ${wtg}   ${purity}"\n`;
+  } else {                     // d1 (default): the proven clean grid
     left =
-      `BOX ${BOXL},${BOXT},${BOXR},${BOXB},2\n` +
-      `BAR ${DIV},${BOXT+2},2,${BOXB-BOXT-4}\n` +
-      `TEXT ${L},10,"1",0,1,1,"HUID"\n` +
-      `TEXT ${L},24,"3",0,1,1,"${huid}"\n` +
+      `TEXT ${L},8,"1",0,1,1,"HUID"\n` +
+      `TEXT ${L},22,"3",0,1,1,"${huid}"\n` +
       `TEXT ${L},56,"1",0,1,1,"${article}"\n` +
-      `TEXT ${L},78,"1",0,1,1,"Wt ${wtg}"\n` + `TEXT ${RP},78,"1",0,1,1,"${purity}"\n` +
-      `TEXT ${L},98,"1",0,1,1,"${centre}"\n`;
+      `TEXT ${L},80,"1",0,1,1,"Wt ${wtg}"\n` + `TEXT ${RP},80,"1",0,1,1,"${purity}"\n` +
+      `TEXT ${L},100,"1",0,1,1,"${centre}"\n`;
   }
 
   return [
     `SIZE 100 mm, 18 mm`, `GAP 0 mm, 0 mm`, `SPEED 4`, `DENSITY 6`,
     `DIRECTION 0`, `REFERENCE 0,0`, `CLS`,
     left,
+    // Clean QR band — no borders anywhere near it.
     `QRCODE ${QX},10,L,3,A,0,"${url}"`,
-    `TEXT ${SX},52,"1",0,1,1,"${serial}"`,
-    `TEXT ${SX},70,"1",0,1,1,"Scan to verify"`,
+    `TEXT ${SX},54,"1",0,1,1,"${serial}"`,
+    `TEXT ${SX},72,"1",0,1,1,"Scan QR"`,
     `PRINT 1,1`, ``
   ].join('\n');
 }
