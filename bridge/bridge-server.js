@@ -66,6 +66,13 @@ const SKIP_X = 296;            // front blank (whole content moved 3mm toward he
 const DET_X  = SKIP_X + 8;     // details block starts just after the skip
 const BC_X   = SKIP_X + 264;   // QR after the details; leaves room for the
                                // serial to sit after the QR before the tail end
+
+// ---- Print quality (edit these if the QR is too dark/blobby or too faint) ----
+// Direct-thermal bleed makes fine QR modules merge when DENSITY is too high.
+// Lower QR_DENSITY for crisper, more scannable QR; raise it if print is faint.
+// Range 0-15. SPEED range ~1-5 (ips); moderate speed keeps edges clean.
+const QR_DENSITY = 5;          // was 6 — a touch lighter to reduce module bleed
+const QR_SPEED   = 3;          // was 4 — slightly slower for cleaner edges
 function buildTSPL(p) {
   const purMap = { '999':'999 24K','958':'958 23K','916':'916 22K','833':'833 20K','750':'750 18K','585':'585 14K','375':'375 9K' };
   const clean  = (v) => ((v == null ? '' : '' + v).replace(/"/g, '').trim());
@@ -133,7 +140,7 @@ function buildTSPL(p) {
   }
 
   return [
-    `SIZE 100 mm, 18 mm`, `GAP 0 mm, 0 mm`, `SPEED 4`, `DENSITY 6`,
+    `SIZE 100 mm, 18 mm`, `GAP 0 mm, 0 mm`, `SPEED ${QR_SPEED}`, `DENSITY ${QR_DENSITY}`,
     `DIRECTION 0`, `REFERENCE 0,0`, `CLS`,
     left,
     // Clean QR band — no borders anywhere near it. ECC "M" adds error
