@@ -136,8 +136,10 @@ function buildTSPL(p) {
     `SIZE 100 mm, 18 mm`, `GAP 0 mm, 0 mm`, `SPEED 4`, `DENSITY 6`,
     `DIRECTION 0`, `REFERENCE 0,0`, `CLS`,
     left,
-    // Clean QR band — no borders anywhere near it.
-    `QRCODE ${QX},10,L,3,A,0,"${url}"`,
+    // Clean QR band — no borders anywhere near it. ECC "M" adds error
+    // correction so the code still decodes if thermal print bleed merges a
+    // few modules (same physical size as ECC "L" for this data).
+    `QRCODE ${QX},10,M,3,A,0,"${url}"`,
     `TEXT ${SX},54,"1",0,1,1,"${serial}"`,
     `TEXT ${SX},72,"1",0,1,1,"Scan QR"`,
     `PRINT 1,1`, ``

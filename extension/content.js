@@ -119,14 +119,17 @@
     // to scan on the narrow tag. The centre name lives on the website.
     const params = { h: tag.huid, w: tag.weight, p: purityCode };
     const s = await signParams(params);
-    const qs = new URLSearchParams({ ...params, s }).toString();
+    // Short path form: /t/<huid>/<weight>/<purity>/<sig> — much shorter than a
+    // query string, so the QR stays coarse enough to scan on the narrow tag.
+    const seg = (v) => encodeURIComponent(String(v == null ? '' : v));
+    const path = [params.h, params.w, params.p, s].map(seg).join('/');
     return {
       huid: tag.huid, weight: tag.weight, purity: purityCode,
       article: tag.article,
       serial, barcode: `HD-${tag.huid}`,
       ahc_name: TAG_CONFIG.AHC_NAME,
       template_detail: templateDetail,      // 'd1'..'d5'
-      detail_url: `${TAG_CONFIG.DETAIL_BASE}?${qs}`
+      detail_url: `${TAG_CONFIG.DETAIL_BASE}/${path}`
     };
   }
 
