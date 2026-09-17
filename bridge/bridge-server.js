@@ -46,7 +46,7 @@ function saveMockJob(p, tspl) {
     try { fs.mkdirSync(JOBS_DIR, { recursive: true }); } catch (e) {}
     const safe = String(p.serial || p.huid || Date.now()).replace(/[^A-Za-z0-9._-]/g, '_');
     const file = path.join(JOBS_DIR, `${safe}.tspl`);
-    fs.writeFile(file, tspl, 'ascii', (err) => {
+    fs.writeFile(file, tspl, (err) => {   // tspl is a Buffer (may contain binary)
       if (err) return reject(new Error('mock write failed: ' + err.message));
       console.log(`[Bridge][TEST] saved ${p.serial || p.huid}  ->  ${file}`);
       resolve(true);
@@ -139,24 +139,62 @@ function buildTSPL(p) {
       `TEXT ${L},100,"1",0,1,1,"${centre}"\n`;
   }
 
-  return [
-    `SIZE 100 mm, 18 mm`, `GAP 0 mm, 0 mm`, `SPEED ${QR_SPEED}`, `DENSITY ${QR_DENSITY}`,
-    `DIRECTION 0`, `REFERENCE 0,0`, `CLS`,
-    left,
-    // Clean QR band — no borders anywhere near it. ECC "M" adds error
-    // correction so the code still decodes if thermal print bleed merges a
-    // few modules (same physical size as ECC "L" for this data).
-    `QRCODE ${QX},10,M,3,A,0,"${url}"`,
-    `TEXT ${SX},54,"1",0,1,1,"${serial}"`,
-    `TEXT ${SX},72,"1",0,1,1,"Scan QR"`,
-    `PRINT 1,1`, ``
-  ].join('\n');
+  const header =
+    `SIZE 100 mm, 18 mm\nGAP 0 mm, 0 mm\nSPEED ${QR_SPEED}\nDENSITY ${QR_DENSITY}\n` +
+    `DIRECTION 0\nREFERENCE 0,0\nCLS\n${left}`;
+  const tail =
+    `TEXT ${SX},54,"1",0,1,1,"${serial}"\n` +
+    `TEXT ${SX},72,"1",0,1,1,"Scan QR"\n` +
+    `PRINT 1,1\n`;
+
+  // Preferred path: the extension generated the QR and sent the module matrix.
+  // We render it ourselves as a bitmap so the printed QR is EXACTLY the one the
+  // operator previewed (the printer no longer generates the QR).
+  if (Array.isArray(p.qr_rows) && p.qr_rows.length) {
+    const n = p.qr_rows.length;
+    // Largest module size that still fits the tag height (~104 dots usable).
+    const scale = Math.max(2, Math.min(5, Math.floor(104 / n)));
+    const bmp = qrBitmap(p.qr_rows, scale);
+    const qy = 8;
+    return Buffer.concat([
+      Buffer.from(header, 'latin1'),
+      Buffer.from(`BITMAP ${QX},${qy},${bmp.widthBytes},${bmp.height},0,`, 'latin1'),
+      bmp.data,
+      Buffer.from('\n' + tail, 'latin1'),
+    ]);
+  }
+
+  // Fallback: let the printer generate the QR (older extension without qr_rows).
+  return Buffer.from(header + `QRCODE ${QX},10,M,3,A,0,"${url}"\n` + tail, 'latin1');
+}
+
+// Convert a QR module matrix (array of '1'/'0' strings) to a TSPL BITMAP
+// payload. Each module is drawn as scale×scale dots. In TSPL BITMAP data a
+// bit value of 0 = black dot (printed), 1 = white; so we start all-white
+// (0xFF) and clear bits for dark modules.
+function qrBitmap(rows, scale) {
+  const n = rows.length;
+  const widthPx = n * scale, height = n * scale;
+  const widthBytes = Math.ceil(widthPx / 8);
+  const data = Buffer.alloc(widthBytes * height, 0xFF);
+  for (let py = 0; py < height; py++) {
+    const mr = (py / scale) | 0;
+    const rowStr = rows[mr];
+    for (let px = 0; px < widthPx; px++) {
+      if (rowStr[(px / scale) | 0] === '1') {
+        const idx = py * widthBytes + (px >> 3);
+        data[idx] &= ~(1 << (7 - (px & 7)));   // black dot
+      }
+    }
+  }
+  return { data, widthBytes, height, widthPx };
 }
 
 function sendToPrinter(tspl) {
   return new Promise((resolve, reject) => {
     const tmp = path.join(os.tmpdir(), `tag_${Date.now()}.tspl`);
-    fs.writeFile(tmp, tspl, 'ascii', (werr) => {
+    // tspl may be a Buffer (contains binary BITMAP data) — write raw bytes.
+    fs.writeFile(tmp, tspl, (werr) => {
       if (werr) return reject(new Error('temp write failed: ' + werr.message));
       exec(`copy /b "${tmp}" "\\\\localhost\\${PRINTER_NAME}"`, { shell:'cmd.exe' }, (err, so, se) => {
         fs.unlink(tmp, () => {});

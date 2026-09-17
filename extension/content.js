@@ -123,13 +123,18 @@
     // query string, so the QR stays coarse enough to scan on the narrow tag.
     const seg = (v) => encodeURIComponent(String(v == null ? '' : v));
     const path = [params.h, params.w, params.p, s].map(seg).join('/');
+    const url = `${TAG_CONFIG.DETAIL_BASE}/${path}`;
+    // We generate the QR ourselves and send the matrix to the bridge, which
+    // prints it as a bitmap — the printer no longer generates the QR.
+    const qr = makeQR(url);
     return {
       huid: tag.huid, weight: tag.weight, purity: purityCode,
       article: tag.article,
       serial, barcode: `HD-${tag.huid}`,
       ahc_name: TAG_CONFIG.AHC_NAME,
       template_detail: templateDetail,      // 'd1'..'d5'
-      detail_url: `${TAG_CONFIG.DETAIL_BASE}/${path}`
+      detail_url: url,
+      qr_rows: qr.rows, qr_count: qr.count
     };
   }
 
@@ -245,6 +250,35 @@
     return `<svg width="${px}" height="${px}" viewBox="0 0 ${px} ${px}" xmlns="http://www.w3.org/2000/svg" style="display:block"><rect width="${px}" height="${px}" fill="#fff"/><g fill="#1B2430">${cells}</g></svg>`;
   }
 
+  // ---- REAL QR generation (we build the QR ourselves, not the printer) ----
+  // Uses the bundled qrcode-generator lib. Returns the module matrix as an
+  // array of '1'/'0' row strings; the SAME matrix is shown in the preview and
+  // sent to the bridge to print as a bitmap, so preview == printed exactly.
+  function makeQR(text) {
+    const qr = qrcode(0, 'M');          // type 0 = auto-fit, ECC level M
+    qr.addData(String(text));
+    qr.make();
+    const n = qr.getModuleCount();
+    const rows = [];
+    for (let r = 0; r < n; r++) {
+      let s = '';
+      for (let c = 0; c < n; c++) s += qr.isDark(r, c) ? '1' : '0';
+      rows.push(s);
+    }
+    return { count: n, rows };
+  }
+
+  // Render a real QR matrix to crisp SVG (with a white quiet-zone border).
+  function qrRealSVG(rows, px) {
+    const n = rows.length, quiet = 2, total = n + quiet * 2, cell = px / total;
+    let cells = '';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+      if (rows[r][c] === '1')
+        cells += `<rect x="${((c + quiet) * cell).toFixed(2)}" y="${((r + quiet) * cell).toFixed(2)}" width="${cell.toFixed(2)}" height="${cell.toFixed(2)}"/>`;
+    }
+    return `<svg width="${px}" height="${px}" viewBox="0 0 ${px} ${px}" xmlns="http://www.w3.org/2000/svg" style="display:block"><rect width="${px}" height="${px}" fill="#fff"/><g fill="#000" shape-rendering="crispEdges">${cells}</g></svg>`;
+  }
+
   // ---- template modal ----
   // Weight always shown to 3 decimals in previews (matches the printed tag).
   function wt3(v) { const n = parseFloat(v); return isFinite(n) ? n.toFixed(3) : (v || '0.000'); }
@@ -293,10 +327,11 @@
       <div style="font-size:9px;font-weight:600;margin-top:1px;">${w}g &nbsp; ${d.purCode}</div></div>`;
   }
 
-  function openTemplateModal() {
+  async function openTemplateModal() {
     const { data } = refresh();
+    const printable = data.tags.filter(t => t.canPrint);
     const sample = (() => {
-      const t = data.tags.find(x => x.canPrint) || data.tags[0];
+      const t = printable[0] || data.tags[0] || {};
       return { huid: t.huid || '------', wt: t.weight || '0.000',
         article: t.article || '', pur: PURITY_LABEL[selPurity], purCode: selPurity,
         serial: serialFor(data.jobcardNo, t.tag_id) };
@@ -318,10 +353,12 @@
           <div class="htp-cards htp-cards-3" id="htpDetailCards"></div>
           <p class="htp-sec">Live preview</p>
           <div class="htp-final" id="htpFinal"></div>
+          <p class="htp-sec">Tags to print (${printable.length}) — real QR, exactly what will print</p>
+          <div class="htp-qrlist" id="htpQrList"><div class="htp-qrloading">Generating QR codes…</div></div>
         </div>
         <div class="htp-modal-foot">
           <button class="htp-cancel">Cancel</button>
-          <button class="htp-print">Print All Tags</button>
+          <button class="htp-print">Print All Tags (${printable.length})</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -334,6 +371,16 @@
       {id:'d5',name:'Minimal'},
     ];
 
+    // Pre-build every printable tag's payload (with its real QR matrix) so the
+    // list shows the exact QR that will be printed, and Print All reuses them.
+    let sampleQR = null;
+    const payloads = [];
+    for (const t of printable) {
+      const pl = await buildPayload(t, data.jobcardNo, selPurity, selDetail);
+      payloads.push({ tag: t, pl });
+      if (!sampleQR) sampleQR = pl.qr_rows;
+    }
+
     function paintCards() {
       overlay.querySelector('#htpDetailCards').innerHTML = detailDefs.map(c => `
         <div class="htp-card ${selDetail===c.id?'sel':''}" data-d="${c.id}">
@@ -343,15 +390,29 @@
       overlay.querySelectorAll('[data-d]').forEach(el => el.onclick = () => { selDetail = el.dataset.d; paintCards(); paintFinal(); });
     }
     function paintFinal() {
+      const qrSvg = sampleQR ? qrRealSVG(sampleQR, 60) : qrPreviewSVG(60);
       overlay.querySelector('#htpFinal').innerHTML = `
         <div class="htp-tag">
           <div class="htp-tag-l">${detailPreviewHTML(selDetail, sample)}</div>
           <div class="htp-tag-fold"><div class="htp-tag-hole"></div></div>
-          <div class="htp-tag-r">${qrPreviewSVG(60)}
+          <div class="htp-tag-r">${qrSvg}
             <div class="serial">${sample.serial}</div><div class="scan">Scan to verify</div></div>
         </div>`;
     }
-    paintCards(); paintFinal();
+    function paintList() {
+      const list = overlay.querySelector('#htpQrList');
+      if (!payloads.length) { list.innerHTML = '<div class="htp-qrloading">No tags ready to print.</div>'; return; }
+      list.innerHTML = payloads.map(({ tag, pl }) => `
+        <div class="htp-qrrow">
+          <div class="htp-qrimg">${qrRealSVG(pl.qr_rows, 72)}</div>
+          <div class="htp-qrinfo">
+            <div class="htp-qrhuid">${pl.huid}</div>
+            <div class="htp-qrmeta">${(tag.article||'—')} · Wt ${wt3(tag.weight)}g · ${PURITY_LABEL[selPurity]||selPurity}</div>
+            <div class="htp-qrserial">${pl.serial}</div>
+          </div>
+        </div>`).join('');
+    }
+    paintCards(); paintFinal(); paintList();
 
     const close = () => overlay.remove();
     overlay.querySelector('.htp-modal-x').onclick = close;
