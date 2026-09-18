@@ -289,42 +289,35 @@
   // buildTSPL output for each design id.
   function detailPreviewHTML(tpl, d) {
     const art = (d.article || '—').toUpperCase();
-    const ctr = TAG_CONFIG.AHC_NAME.toUpperCase();
     const w = wt3(d.wt);
-    const wrap = 'font-family:Arial,Helvetica,sans-serif;color:#111;box-sizing:border-box;width:100%;height:100%;background:#fff;';
-    if (tpl === 'd1') return `<div style="${wrap}border:1.5px solid #111;padding:5px 7px;">
-      <div style="font-size:8px;letter-spacing:.5px;color:#555;">HUID</div>
-      <div style="font-size:15px;font-weight:700;letter-spacing:.5px;line-height:1.1;">${d.huid}</div>
-      <div style="font-size:9px;font-weight:600;margin-top:4px;">${art}</div>
-      <div style="display:flex;justify-content:space-between;font-size:9px;font-weight:600;margin-top:2px;">
-        <span>Wt ${w}g</span><span>${d.purCode}</span></div>
-      <div style="font-size:7px;color:#555;margin-top:3px;letter-spacing:.3px;">${ctr}</div></div>`;
-    if (tpl === 'd2') return `<div style="${wrap}border:1px solid #111;overflow:hidden;">
-      <div style="background:#111;color:#fff;font-size:7.5px;font-weight:700;letter-spacing:.4px;padding:3px 6px;">${ctr}</div>
-      <div style="padding:4px 7px;">
-        <div style="font-size:8px;color:#555;">HUID</div>
-        <div style="font-size:15px;font-weight:700;line-height:1.1;">${d.huid}</div>
-        <div style="font-size:9px;font-weight:600;margin-top:4px;">${art} &nbsp; ${w}g &nbsp; ${d.purCode}</div></div></div>`;
-    if (tpl === 'd3') return `<div style="${wrap}border-left:3px solid #111;padding:5px 8px;">
-      <div style="font-size:7.5px;color:#555;letter-spacing:.4px;">${ctr}</div>
-      <div style="font-size:20px;font-weight:800;letter-spacing:.5px;line-height:1.05;margin-top:1px;">${d.huid}</div>
+    const wrap = 'font-family:Arial,Helvetica,sans-serif;color:#111;box-sizing:border-box;width:100%;height:100%;background:#fff;display:flex;flex-direction:column;justify-content:center;';
+    if (tpl === 'd2') return `<div style="${wrap}border:1px solid #111;padding:6px 8px;">
+      <div style="font-size:8px;color:#555;">HUID</div>
+      <div style="font-size:16px;font-weight:700;line-height:1.1;border-bottom:1px solid #111;padding-bottom:3px;">${d.huid}</div>
       <div style="font-size:9px;font-weight:600;margin-top:5px;">${art}</div>
+      <div style="font-size:9px;font-weight:600;margin-top:1px;">${w}g &nbsp; ${d.purCode}</div></div>`;
+    if (tpl === 'd3') return `<div style="${wrap}border-left:3px solid #111;padding:6px 8px;">
+      <div style="font-size:22px;font-weight:800;letter-spacing:.5px;line-height:1.05;">${d.huid}</div>
+      <div style="font-size:9px;font-weight:600;margin-top:6px;">${art}</div>
       <div style="font-size:9px;font-weight:600;margin-top:1px;">Wt ${w}g &nbsp; ${d.purCode}</div></div>`;
-    if (tpl === 'd4') return `<div style="${wrap}border:1.5px solid #111;padding:4px 7px;">
-      <div style="font-size:7.5px;font-weight:700;color:#555;letter-spacing:.4px;">${ctr}</div>
-      <div style="border-top:1px solid #111;margin:3px 0;"></div>
+    if (tpl === 'd4') return `<div style="${wrap}border:1.5px solid #111;padding:5px 8px;">
       <table style="width:100%;border-collapse:collapse;font-size:9px;">
-        <tr><td style="color:#555;width:34px;">HUID</td><td style="font-weight:700;">${d.huid}</td></tr>
+        <tr><td style="color:#555;width:34px;">HUID</td><td style="font-weight:700;font-size:12px;">${d.huid}</td></tr>
+        <tr><td colspan="2" style="border-bottom:1px solid #111;height:4px;"></td></tr>
         <tr><td style="color:#555;">ART</td><td style="font-weight:600;">${art}</td></tr>
         <tr><td style="color:#555;">WT</td><td style="font-weight:600;">${w}g</td></tr>
         <tr><td style="color:#555;">PUR</td><td style="font-weight:600;">${d.purCode}</td></tr></table></div>`;
-    // d5 minimal clean
-    return `<div style="${wrap}padding:6px 8px;">
-      <div style="font-size:7.5px;color:#555;letter-spacing:.4px;">${ctr}</div>
-      <div style="font-size:19px;font-weight:800;letter-spacing:.5px;line-height:1.05;margin-top:1px;">${d.huid}</div>
-      <div style="border-top:1px solid #111;margin:5px 0 4px;"></div>
-      <div style="font-size:9px;font-weight:600;">${art}</div>
-      <div style="font-size:9px;font-weight:600;margin-top:1px;">${w}g &nbsp; ${d.purCode}</div></div>`;
+    if (tpl === 'd5') return `<div style="${wrap}padding:8px;">
+      <div style="font-size:22px;font-weight:800;letter-spacing:.5px;line-height:1.05;">${d.huid}</div>
+      <div style="border-top:1px solid #111;margin:6px 0 4px;"></div>
+      <div style="font-size:9px;font-weight:600;">${art} &nbsp; ${w}g &nbsp; ${d.purCode}</div></div>`;
+    // d1 (default): clean grid
+    return `<div style="${wrap}border:1.5px solid #111;padding:5px 8px;">
+      <div style="font-size:8px;letter-spacing:.5px;color:#555;">HUID</div>
+      <div style="font-size:16px;font-weight:700;letter-spacing:.5px;line-height:1.1;">${d.huid}</div>
+      <div style="font-size:9px;font-weight:600;margin-top:5px;">${art}</div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;font-weight:600;margin-top:2px;">
+        <span>Wt ${w}g</span><span>${d.purCode}</span></div></div>`;
   }
 
   async function openTemplateModal() {
@@ -390,13 +383,20 @@
       overlay.querySelectorAll('[data-d]').forEach(el => el.onclick = () => { selDetail = el.dataset.d; paintCards(); paintFinal(); });
     }
     function paintFinal() {
-      const qrSvg = sampleQR ? qrRealSVG(sampleQR, 60) : qrPreviewSVG(60);
+      const qrSvg = sampleQR ? qrRealSVG(sampleQR, 62) : qrPreviewSVG(62);
+      const ctr = TAG_CONFIG.AHC_NAME.toUpperCase();
       overlay.querySelector('#htpFinal').innerHTML = `
         <div class="htp-tag">
           <div class="htp-tag-l">${detailPreviewHTML(selDetail, sample)}</div>
           <div class="htp-tag-fold"><div class="htp-tag-hole"></div></div>
-          <div class="htp-tag-r">${qrSvg}
-            <div class="serial">${sample.serial}</div><div class="scan">Scan to verify</div></div>
+          <div class="htp-tag-r htp-tag-qr">
+            <div class="htp-qrbox">${qrSvg}</div>
+            <div class="htp-qrside">
+              <div class="htp-ctr">${ctr}</div>
+              <div class="htp-serlabel">Serial No.</div>
+              <div class="serial">${sample.serial}</div>
+            </div>
+          </div>
         </div>`;
     }
     function paintList() {

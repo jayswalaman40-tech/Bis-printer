@@ -97,55 +97,68 @@ function buildTSPL(p) {
   const DET_MAX = BC_X - 20;   // details must end before here (quiet zone)
   const LW = DET_MAX - L;      // width available for a left-side underline
   const QX = BC_X;             // QR left edge (560)  — clean band, no borders
-  const SX = BC_X + 116;       // serial sits to the RIGHT of the QR, with a gap
 
   const d = p.template_detail;
   let left = '';
 
-  // Each design varies ONLY the details (left) side. No element crosses into
-  // the QR band, so every design scans and none gets clipped at the edges.
-  if (d === 'd2') {            // Header emphasis: centre name + underline
+  // DETAILS side (left) — NO centre name here (it now sits beside the QR).
+  // Each design varies only the details layout. Nothing crosses into the QR
+  // band, so every design scans and none gets clipped at the edges.
+  if (d === 'd2') {            // Underlined heading
     left =
-      `TEXT ${L},6,"1",0,1,1,"${centre}"\n` +
+      `TEXT ${L},8,"1",0,1,1,"HUID"\n` +
       `BAR ${L},22,${LW},2\n` +
-      `TEXT ${L},30,"1",0,1,1,"HUID"\n` +
-      `TEXT ${L},44,"3",0,1,1,"${huid}"\n` +
-      `TEXT ${L},86,"1",0,1,1,"${article}  ${wtg}  ${purity}"\n`;
+      `TEXT ${L},30,"3",0,1,1,"${huid}"\n` +
+      `TEXT ${L},70,"1",0,1,1,"${article}"\n` +
+      `TEXT ${L},90,"1",0,1,1,"${wtg}   ${purity}"\n`;
   } else if (d === 'd3') {     // Big HUID emphasis
     left =
-      `TEXT ${L},6,"1",0,1,1,"${centre}"\n` +
-      `TEXT ${L},20,"4",0,1,1,"${huid}"\n` +
-      `TEXT ${L},74,"1",0,1,1,"${article}"\n` +
-      `TEXT ${L},94,"1",0,1,1,"Wt ${wtg}   ${purity}"\n`;
-  } else if (d === 'd4') {     // Labeled rows (no enclosing box)
+      `TEXT ${L},10,"4",0,1,1,"${huid}"\n` +
+      `TEXT ${L},70,"1",0,1,1,"${article}"\n` +
+      `TEXT ${L},90,"1",0,1,1,"Wt ${wtg}   ${purity}"\n`;
+  } else if (d === 'd4') {     // Labeled rows
     left =
-      `TEXT ${L},6,"1",0,1,1,"${centre}"\n` +
-      `BAR ${L},20,${LW},2\n` +
-      `TEXT ${L},28,"1",0,1,1,"HUID"\n` + `TEXT ${L+66},26,"2",0,1,1,"${huid}"\n` +
-      `TEXT ${L},52,"1",0,1,1,"ART"\n`  + `TEXT ${L+66},52,"1",0,1,1,"${article}"\n` +
-      `TEXT ${L},72,"1",0,1,1,"WT"\n`   + `TEXT ${L+66},70,"2",0,1,1,"${wtg}"\n` +
-      `TEXT ${L},94,"1",0,1,1,"PUR"\n`  + `TEXT ${L+66},94,"1",0,1,1,"${purity}"\n`;
+      `TEXT ${L},6,"1",0,1,1,"HUID"\n` + `TEXT ${L+66},4,"2",0,1,1,"${huid}"\n` +
+      `BAR ${L},28,${LW},2\n` +
+      `TEXT ${L},36,"1",0,1,1,"ART"\n` + `TEXT ${L+66},36,"1",0,1,1,"${article}"\n` +
+      `TEXT ${L},60,"1",0,1,1,"WT"\n`  + `TEXT ${L+66},58,"2",0,1,1,"${wtg}"\n` +
+      `TEXT ${L},86,"1",0,1,1,"PUR"\n` + `TEXT ${L+66},86,"1",0,1,1,"${purity}"\n`;
   } else if (d === 'd5') {     // Minimal clean
     left =
-      `TEXT ${L},10,"1",0,1,1,"${centre}"\n` +
-      `TEXT ${L},24,"4",0,1,1,"${huid}"\n` +
-      `TEXT ${L},84,"1",0,1,1,"${article}   ${wtg}   ${purity}"\n`;
-  } else {                     // d1 (default): the proven clean grid
+      `TEXT ${L},16,"4",0,1,1,"${huid}"\n` +
+      `TEXT ${L},80,"1",0,1,1,"${article}   ${wtg}   ${purity}"\n`;
+  } else {                     // d1 (default): clean grid
     left =
       `TEXT ${L},8,"1",0,1,1,"HUID"\n` +
       `TEXT ${L},22,"3",0,1,1,"${huid}"\n` +
-      `TEXT ${L},56,"1",0,1,1,"${article}"\n` +
-      `TEXT ${L},80,"1",0,1,1,"Wt ${wtg}"\n` + `TEXT ${RP},80,"1",0,1,1,"${purity}"\n` +
-      `TEXT ${L},100,"1",0,1,1,"${centre}"\n`;
+      `TEXT ${L},60,"1",0,1,1,"${article}"\n` +
+      `TEXT ${L},84,"1",0,1,1,"Wt ${wtg}"\n` + `TEXT ${RP},84,"1",0,1,1,"${purity}"\n`;
   }
+
+  // RIGHT column — sits to the right of the QR: centre name (wrapped) on top,
+  // serial number at the bottom. Built once we know the QR's printed width.
+  const wrapWords = (s, max) => {
+    const words = ('' + s).split(/\s+/).filter(Boolean);
+    const out = []; let cur = '';
+    for (const w of words) {
+      if ((cur + ' ' + w).trim().length <= max) cur = (cur + ' ' + w).trim();
+      else { if (cur) out.push(cur); cur = w; }
+    }
+    if (cur) out.push(cur);
+    return out;
+  };
+  const rightCol = (rx) => {
+    const lines = wrapWords(centre, 15).slice(0, 3);
+    let t = '';
+    lines.forEach((ln, i) => { t += `TEXT ${rx},${8 + i * 15},"1",0,1,1,"${ln}"\n`; });
+    t += `TEXT ${rx},72,"1",0,1,1,"Serial No."\n`;
+    t += `TEXT ${rx},88,"1",0,1,1,"${serial}"\n`;
+    return t;
+  };
 
   const header =
     `SIZE 100 mm, 18 mm\nGAP 0 mm, 0 mm\nSPEED ${QR_SPEED}\nDENSITY ${QR_DENSITY}\n` +
     `DIRECTION 0\nREFERENCE 0,0\nCLS\n${left}`;
-  const tail =
-    `TEXT ${SX},54,"1",0,1,1,"${serial}"\n` +
-    `TEXT ${SX},72,"1",0,1,1,"Scan QR"\n` +
-    `PRINT 1,1\n`;
 
   // Preferred path: the extension generated the QR and sent the module matrix.
   // We render it ourselves as a bitmap so the printed QR is EXACTLY the one the
@@ -156,16 +169,18 @@ function buildTSPL(p) {
     const scale = Math.max(2, Math.min(5, Math.floor(104 / n)));
     const bmp = qrBitmap(p.qr_rows, scale);
     const qy = 8;
+    const rx = QX + bmp.widthPx + 12;   // right column starts after QR + quiet zone
     return Buffer.concat([
       Buffer.from(header, 'latin1'),
       Buffer.from(`BITMAP ${QX},${qy},${bmp.widthBytes},${bmp.height},0,`, 'latin1'),
       bmp.data,
-      Buffer.from('\n' + tail, 'latin1'),
+      Buffer.from('\n' + rightCol(rx) + 'PRINT 1,1\n', 'latin1'),
     ]);
   }
 
   // Fallback: let the printer generate the QR (older extension without qr_rows).
-  return Buffer.from(header + `QRCODE ${QX},10,M,3,A,0,"${url}"\n` + tail, 'latin1');
+  const rx = QX + 99 + 12;
+  return Buffer.from(header + `QRCODE ${QX},10,M,3,A,0,"${url}"\n` + rightCol(rx) + 'PRINT 1,1\n', 'latin1');
 }
 
 // Convert a QR module matrix (array of '1'/'0' strings) to a TSPL BITMAP
