@@ -4,7 +4,9 @@
    ================================================================ */
 const TAG_CONFIG = {
   BRIDGE_URL:  'http://localhost:7072',
-  DETAIL_BASE: 'https://hallmark-desk-five.vercel.app/tag',
+  // Short path-form base keeps the printed QR small enough to scan reliably
+  // on the narrow tag: https://<host>/t/<huid>/<weight>/<purity>/<sig>
+  DETAIL_BASE: 'https://jhcv-five.vercel.app/t',
   AHC_NAME:    'Jaliyan Hallmarking Center',   // per-customer
   AHC_CODE:    'SHC001',                        // per-customer
 

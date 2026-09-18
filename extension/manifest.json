@@ -17,7 +17,7 @@
   "content_scripts": [
     {
       "matches": ["https://huid.manakonline.in/*"],
-      "js": ["config.js", "content.js"],
+      "js": ["qrcode.js", "config.js", "content.js"],
       "css": ["panel.css"],
       "run_at": "document_idle"
     }
