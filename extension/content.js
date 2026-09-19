@@ -404,8 +404,7 @@
       if (!payloads.length) { list.innerHTML = '<div class="htp-qrloading">No tags ready to print.</div>'; return; }
       list.innerHTML = payloads.map(({ tag, pl }) => `
         <div class="htp-qrrow">
-          <img class="htp-qrphoto" src="${IMG_BASE}/${encodeURIComponent(pl.huid)}/article" alt=""
-               onerror="this.classList.add('miss')" title="Synced article photo">
+          <img class="htp-qrphoto miss" data-src="${IMG_BASE}/${encodeURIComponent(pl.huid)}/article" alt="" title="Synced article photo">
           <div class="htp-qrimg">${qrRealSVG(pl.qr_rows, 64)}</div>
           <div class="htp-qrinfo">
             <div class="htp-qrhuid">${pl.huid}</div>
@@ -413,6 +412,13 @@
             <div class="htp-qrserial">${pl.serial}</div>
           </div>
         </div>`).join('');
+      // Attach load/error handlers in the isolated world (page CSP may block
+      // inline handlers). The thumbnail stays hidden until it actually loads.
+      list.querySelectorAll('.htp-qrphoto').forEach((im) => {
+        im.addEventListener('load', () => im.classList.remove('miss'));
+        im.addEventListener('error', () => im.classList.add('miss'));
+        im.src = im.dataset.src;
+      });
     }
     paintCards(); paintFinal(); paintList();
 
