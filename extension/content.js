@@ -404,7 +404,9 @@
       if (!payloads.length) { list.innerHTML = '<div class="htp-qrloading">No tags ready to print.</div>'; return; }
       list.innerHTML = payloads.map(({ tag, pl }) => `
         <div class="htp-qrrow">
-          <div class="htp-qrimg">${qrRealSVG(pl.qr_rows, 72)}</div>
+          <img class="htp-qrphoto" src="${IMG_BASE}/${encodeURIComponent(pl.huid)}/article" alt=""
+               onerror="this.classList.add('miss')" title="Synced article photo">
+          <div class="htp-qrimg">${qrRealSVG(pl.qr_rows, 64)}</div>
           <div class="htp-qrinfo">
             <div class="htp-qrhuid">${pl.huid}</div>
             <div class="htp-qrmeta">${(tag.article||'—')} · Wt ${wt3(tag.weight)}g · ${PURITY_LABEL[selPurity]||selPurity}</div>
