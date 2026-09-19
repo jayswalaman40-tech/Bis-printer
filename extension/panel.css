@@ -97,3 +97,22 @@ tr.htp-blk td{ background:#FFF7F2!important; opacity:.72; }
 .htp-cancel{ padding:10px 18px; font:600 13px 'IBM Plex Sans'; background:#fff; color:#1B2430; border:1px solid #C4CBBE; border-radius:3px; cursor:pointer; }
 .htp-print{ padding:10px 22px; font:700 13px 'IBM Plex Sans'; background:#A8802A; color:#fff; border:none; border-radius:3px; cursor:pointer; }
 .htp-print:hover{ background:#8C6820; }
+
+/* ===== Image Sync panel (Capture-Image page) ===== */
+.hdimg-panel{ position:fixed; right:18px; bottom:18px; z-index:2147483000; width:270px; background:#0E1626; color:#EAF0FA; border:1px solid #C6A15B; border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.5); font-family:'IBM Plex Sans',system-ui,sans-serif; overflow:hidden; }
+.hdimg-head{ display:flex; align-items:center; gap:8px; padding:11px 14px; border-bottom:1px solid #24344E; }
+.hdimg-dot{ width:9px; height:9px; border-radius:50%; background:#37C083; box-shadow:0 0 0 3px rgba(55,192,131,.25); }
+.hdimg-title{ font-weight:700; font-size:13px; letter-spacing:.02em; }
+.hdimg-body{ padding:14px; }
+.hdimg-huid{ font-size:13px; color:#95A6BE; } .hdimg-huid b{ color:#F6EAD0; font:700 16px 'IBM Plex Mono',monospace; letter-spacing:.06em; margin-left:4px; }
+.hdimg-sub{ font-size:11px; color:#6E7E96; margin-top:3px; }
+.hdimg-thumbs{ display:flex; flex-wrap:wrap; gap:6px; margin:12px 0; }
+.hdimg-chip{ font:600 10px 'IBM Plex Sans'; color:#C6A15B; border:1px solid #6a5a34; border-radius:100px; padding:4px 9px; }
+.hdimg-sync{ width:100%; padding:10px; font:700 13px 'IBM Plex Sans'; background:#C6A15B; color:#1B2430; border:none; border-radius:6px; cursor:pointer; }
+.hdimg-sync:hover{ background:#b8923f; } .hdimg-sync:disabled{ opacity:.6; cursor:default; }
+.hdimg-status{ margin:10px 0 0; font-size:11.5px; line-height:1.5; color:#95A6BE; min-height:14px; }
+.hdimg-status .ok{ color:#4FD08A; } .hdimg-status .err{ color:#F0906F; }
+
+/* synced article photo in the tag list */
+.htp-qrphoto{ width:56px; height:56px; flex-shrink:0; object-fit:cover; border-radius:6px; border:1px solid #E0DFD3; background:#F2F3EE; }
+.htp-qrphoto.miss{ display:none; }

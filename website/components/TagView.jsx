@@ -14,6 +14,10 @@ const PURITY = {
 // Tamper protection: must match SIGN_SECRET in extension/config.js.
 const SIGN_SECRET = 'hd-d081b74809f6507741bcceb5c6783dea';
 
+// Image server (must match SUPABASE_* in extension/config.js). Photos are
+// stored per HUID as <HUID>/article and <HUID>/huid.
+const IMG_BASE = 'https://dkufqwkyrdponsaekshv.supabase.co/storage/v1/object/public/bistags';
+
 // Recompute the tag signature the extension put in ?s= and compare.
 async function verifySignature(q) {
   if (!q.s) return false;
@@ -36,6 +40,57 @@ function today() {
   try {
     return new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
   } catch { return ''; }
+}
+
+// Product photo gallery — loads the article + HUID photos for this HUID from
+// the image server. Any photo that isn't present is hidden; if none exist the
+// whole section disappears. Tap a photo to view it full-screen.
+function PhotoGallery({ huid }) {
+  const [st, setSt] = useState({ article: 'loading', huid: 'loading' });
+  const [zoom, setZoom] = useState(null);
+  const shots = [
+    { key: 'article', label: 'Article Photo', url: `${IMG_BASE}/${encodeURIComponent(huid)}/article` },
+    { key: 'huid',    label: 'Hallmark Photo', url: `${IMG_BASE}/${encodeURIComponent(huid)}/huid` },
+  ];
+  const set = (k, v) => setSt(p => ({ ...p, [k]: v }));
+  const anyOk = st.article === 'ok' || st.huid === 'ok';
+  const anyPending = st.article === 'loading' || st.huid === 'loading';
+  if (!anyOk && !anyPending) return null;
+
+  return (
+    <section className="gal">
+      <p className="gal-title">Product Photos</p>
+      <div className="gal-grid">
+        {shots.map(s => (
+          <figure key={s.key} className="gal-fig" style={{ display: st[s.key] === 'err' ? 'none' : 'block' }}>
+            <div className="gal-imgwrap">
+              <img src={s.url} alt={s.label} loading="lazy"
+                onLoad={() => set(s.key, 'ok')} onError={() => set(s.key, 'err')}
+                onClick={() => st[s.key] === 'ok' && setZoom(s.url)} />
+            </div>
+            <figcaption>{s.label}</figcaption>
+          </figure>
+        ))}
+      </div>
+      {zoom && (
+        <div className="gal-lb" onClick={() => setZoom(null)}>
+          <img src={zoom} alt="" /><span className="gal-close">×</span>
+        </div>
+      )}
+      <style jsx>{`
+        .gal{ margin-top:22px; }
+        .gal-title{ text-align:center; font:600 11px 'Inter',system-ui,sans-serif; letter-spacing:.14em; text-transform:uppercase; color:#9C8A62; margin-bottom:14px; }
+        .gal-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+        .gal-fig{ margin:0; background:#fff; border:1px solid #EAE4D6; border-radius:14px; overflow:hidden; box-shadow:0 6px 16px rgba(24,34,52,.06); }
+        .gal-imgwrap{ aspect-ratio:1/1; background:#F6F4EE; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+        .gal-imgwrap img{ width:100%; height:100%; object-fit:cover; cursor:zoom-in; display:block; }
+        figcaption{ font:600 11px 'Inter',system-ui,sans-serif; color:#5C6672; text-align:center; padding:9px 6px; letter-spacing:.02em; }
+        .gal-lb{ position:fixed; inset:0; z-index:50; background:rgba(8,12,20,.92); display:flex; align-items:center; justify-content:center; padding:20px; cursor:zoom-out; }
+        .gal-lb img{ max-width:100%; max-height:100%; border-radius:8px; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+        .gal-close{ position:fixed; top:16px; right:22px; color:#fff; font-size:34px; line-height:1; }
+      `}</style>
+    </section>
+  );
 }
 
 // Shared verification + display view. `q` is { h, w, p, s, ac } parsed from
@@ -168,6 +223,9 @@ export default function TagView({ q = {}, isReady = true }) {
           <span className="c-s">Gold fineness</span>
         </div>
       </section>
+
+      {/* ---- product photos (article + HUID) ---- */}
+      <PhotoGallery huid={data.huid} />
 
       {/* ---- three marks of hallmarking ---- */}
       <section className="marks">

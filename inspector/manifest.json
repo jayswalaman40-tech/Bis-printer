@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "BIS Page Inspector (temporary)",
+  "version": "1.0.0",
+  "description": "One-time helper to dump the Capture-Image page structure (images + HUID mapping) so the tag system can be wired up.",
+  "host_permissions": ["https://*.manakonline.in/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://*.manakonline.in/*"],
+      "js": ["inspect.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
