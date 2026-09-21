@@ -116,3 +116,7 @@ tr.htp-blk td{ background:#FFF7F2!important; opacity:.72; }
 /* synced article photo in the tag list */
 .htp-qrphoto{ width:56px; height:56px; flex-shrink:0; object-fit:cover; border-radius:6px; border:1px solid #E0DFD3; background:#F2F3EE; }
 .htp-qrphoto.miss{ display:none; }
+
+/* jobcard sync progress bar */
+.hdimg-progress{ height:6px; background:#24344E; border-radius:100px; overflow:hidden; margin:2px 0 12px; }
+.hdimg-progress i{ display:block; height:100%; width:0; background:linear-gradient(90deg,#C6A15B,#37C083); transition:width .2s; }
