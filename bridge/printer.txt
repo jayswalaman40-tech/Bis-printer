@@ -1,0 +1,13 @@
+# Hallmark Tag Bridge — printer name
+#
+# Put the EXACT Windows SHARE name of your label printer on the first
+# real line below (lines starting with # are ignored).
+#
+# How to set it:
+#   Control Panel > Devices and Printers > right-click your printer
+#   (e.g. "TVSE LP 46 NEO(U)1") > Printer Properties > Sharing tab >
+#   tick "Share this printer" > set the share name to a simple name with
+#   NO spaces, e.g.  TVSELP46  > OK.
+# Then make sure the line below matches that share name exactly.
+
+TVSELP46

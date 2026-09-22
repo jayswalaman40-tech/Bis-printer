@@ -1,11 +1,17 @@
 @echo off
 title Hallmark Tag Bridge - Calibrate Label Gap
-REM Must match the shared printer name (same as PRINTER_NAME in bridge-server.js)
-set PRINTER=TSC TE244
+cd /d "%~dp0"
+
+REM Read the share name from printer.txt (first non-empty, non-# line).
+set "PRINTER="
+for /f "usebackq eol=# tokens=* delims=" %%p in ("%~dp0printer.txt") do (
+  if not defined PRINTER set "PRINTER=%%p"
+)
+if not defined PRINTER set "PRINTER=TVSELP46"
 
 echo Sending gap calibration to "%PRINTER%"...
 > "%TEMP%\hd_cal.tspl" (
-  echo SIZE 100 mm, 15 mm
+  echo SIZE 100 mm, 18 mm
   echo GAP 2 mm, 0 mm
   echo DIRECTION 0
   echo GAPDETECT

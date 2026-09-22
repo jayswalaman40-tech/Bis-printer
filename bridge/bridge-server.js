@@ -1,4 +1,6 @@
-/* Hallmark Tag Bridge — port 7072. Receives a print job, builds TSPL, sends to TSC TE244. */
+/* Hallmark Tag Bridge — port 7072. Receives a print job, builds TSPL, and sends
+   it to a TSPL-compatible thermal label printer (TVSE LP 46 Neo, TSC TE244, …).
+   The printer name is set in printer.txt (see resolvePrinterName below). */
 const express = require('express');
 const cors = require('cors');
 const { exec } = require('child_process');
@@ -8,7 +10,30 @@ const os = require('os');
 
 const app = express();
 const PORT = 7072;
-const PRINTER_NAME = 'TSC TE244';   // exact Windows printer/share name
+
+// ---- Printer name resolution (no code edit needed per PC) ----
+// The Windows printer/share name is taken from, in order:
+//   1) command line:  node bridge-server.js --printer "TVSELP46"
+//   2) environment:    set HALLMARK_PRINTER=TVSELP46
+//   3) printer.txt     (a plain text file next to this script — first
+//                       non-empty line that is not a # comment)
+//   4) fallback default
+// So on a new PC you just put the shared printer name in printer.txt.
+function resolvePrinterName() {
+  const i = process.argv.indexOf('--printer');
+  if (i >= 0 && process.argv[i + 1]) return process.argv[i + 1].trim();
+  if (process.env.HALLMARK_PRINTER && process.env.HALLMARK_PRINTER.trim()) return process.env.HALLMARK_PRINTER.trim();
+  try {
+    const f = path.join(__dirname, 'printer.txt');
+    if (fs.existsSync(f)) {
+      const line = fs.readFileSync(f, 'utf8').split(/\r?\n/).map(s => s.trim())
+        .filter(s => s && !s.startsWith('#'))[0];
+      if (line) return line;
+    }
+  } catch (e) {}
+  return 'TVSELP46';   // default share name for the TVSE LP 46 Neo
+}
+const PRINTER_NAME = resolvePrinterName();   // exact Windows printer/share name
 
 // TEST MODE — for a full end-to-end trial without a printer.
 // Enable with `node bridge-server.js --mock` (or start-test.bat), or by
