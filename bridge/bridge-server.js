@@ -141,7 +141,7 @@ const QR_SPEED   = 3;          // was 4 — slightly slower for cleaner edges
    u = dots from the panel's left edge (as read), v = dots from its top edge.
    S_X0 / S_TOP map tag space to printer dots (X = S_X0 - u, y = S_TOP - v).
    Tune these after a test print if the design sits off the tag. */
-const S_X0        = 466;   // printer X of the design's left edge (as read)
+const S_X0        = 422;   // printer X of the design's left edge (as read) — moved 44 dots toward the tail so the box clears the fold
 const S_TOP       = 94;    // printer y of the design's top edge (as read)
 const S_W         = 190;   // design width  (dots, ~24 mm)
 const S_H         = 80;    // design height (dots, 10 mm)
