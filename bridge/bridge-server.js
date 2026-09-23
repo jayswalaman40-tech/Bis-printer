@@ -51,6 +51,22 @@ function resolveTag() {
 }
 const TAG_SIZE = resolveTag();   // 'large' or 'small'
 
+// ---- Centre name override ----  If set, printed instead of the portal's AHC
+// name. From HALLMARK_CENTRE env or centre.txt (first non-# line), else none.
+function resolveCentre() {
+  if (process.env.HALLMARK_CENTRE && process.env.HALLMARK_CENTRE.trim()) return process.env.HALLMARK_CENTRE.trim();
+  try {
+    const f = path.join(__dirname, 'centre.txt');
+    if (fs.existsSync(f)) {
+      const line = fs.readFileSync(f, 'utf8').split(/\r?\n/).map(s => s.trim())
+        .filter(s => s && !s.startsWith('#'))[0];
+      if (line) return line;
+    }
+  } catch (e) {}
+  return '';
+}
+const CENTRE_NAME = resolveCentre();
+
 // TEST MODE — for a full end-to-end trial without a printer.
 // Enable with `node bridge-server.js --mock` (or start-test.bat), or by
 // setting HALLMARK_MOCK=1. In test mode each job's TSPL is saved to ./jobs
@@ -145,47 +161,49 @@ const FONT_W = { '1': 8, '2': 12, '3': 16, '4': 24 };
 const fit = (s, font, width) => ('' + s).slice(0, Math.floor(width / FONT_W[font]));
 
 // The 5 designs from the extension's template picker, sized for 190 x 80 dots.
-// Every design shows Centre, HUID, Article, Weight and Purity (QR is separate).
+// Every design shows Centre, HUID, Article, Weight and Purity (QR is separate),
+// each field written as "LABEL - value".
 function smallDesign(d, f) {
   const { huid, art, wt, pur, centre } = f;
   const L = 6, IW = S_W - 2 * L;                       // inner left + width
+  const ART = `ART - ${art}`, WT = `WT - ${wt}`, PUR = `PUR - ${pur}`;
   if (d === 'd2') {                                     // Header bar
     return sText(L, 2, '1', fit(centre, '1', IW)) + sRev(0, 0, S_W, 16) +
       sBox(0, 0, S_W, S_H, 2) +                         // after REVERSE so its border stays black
-      sText(L, 20, '1', 'HUID') +
-      sText(L, 32, '2', huid) +
-      sText(L, 60, '1', fit(`${art} ${wt} ${pur}`, '1', IW));
+      sText(L, 22, '2', fit(`HUID - ${huid}`, '2', IW)) +
+      sText(L, 47, '1', fit(ART, '1', IW)) +
+      sText(L, 61, '1', fit(`${WT} ${PUR}`, '1', IW));
   }
   if (d === 'd3') {                                     // Big HUID
+    const W3 = S_W - 12;
     return sBar(0, 0, 4, S_H) +
-      sText(10, 2, '1', fit(centre, '1', S_W - 12)) +
-      sText(10, 17, '4', huid) +
-      sText(10, 53, '1', fit(art, '1', S_W - 12)) +
-      sText(10, 67, '1', fit(`Wt ${wt}  ${pur}`, '1', S_W - 12));
+      sText(10, 2, '1', fit(centre, '1', W3)) +
+      sText(10, 16, '4', huid) +
+      sText(10, 52, '1', fit(ART, '1', W3)) +
+      sText(10, 66, '1', fit(`${WT} ${PUR}`, '1', W3));
   }
   if (d === 'd4') {                                     // Labeled box
-    const VX = 46;
+    const VX = 62;                                      // values after "HUID - "
     return sBox(0, 0, S_W, S_H, 2) +
       sText(L, 3, '1', fit(centre, '1', IW)) + sBar(L, 17, S_W - L, 19) +
-      sText(L, 23, '1', 'HUID') + sText(VX, 23, '1', huid) +
-      sText(L, 37, '1', 'ART')  + sText(VX, 37, '1', fit(art, '1', S_W - VX - L)) +
-      sText(L, 51, '1', 'WT')   + sText(VX, 51, '1', wt) +
-      sText(L, 65, '1', 'PUR')  + sText(VX, 65, '1', pur);
+      sText(L, 23, '1', 'HUID -') + sText(VX, 23, '1', huid) +
+      sText(L, 37, '1', 'ART  -') + sText(VX, 37, '1', fit(art, '1', S_W - VX - L)) +
+      sText(L, 51, '1', 'WT   -') + sText(VX, 51, '1', wt) +
+      sText(L, 65, '1', 'PUR  -') + sText(VX, 65, '1', pur);
   }
   if (d === 'd5') {                                     // Minimal
     return sText(2, 2, '1', fit(centre, '1', S_W - 4)) +
-      sText(2, 17, '4', huid) +
-      sBar(2, 53, S_W - 4, 55) +
-      sText(2, 60, '1', fit(`${art} ${wt} ${pur}`, '1', S_W - 4));
+      sText(2, 16, '4', huid) +
+      sBar(2, 51, S_W - 4, 53) +
+      sText(2, 56, '1', fit(ART, '1', S_W - 4)) +
+      sText(2, 68, '1', fit(`${WT} ${PUR}`, '1', S_W - 4));
   }
   // d1 (default): Bordered grid
-  const wtS = `Wt ${wt}`;
   return sBox(0, 0, S_W, S_H, 2) +
-    sText(L, 3, '1', 'HUID') +
-    sText(L, 14, '2', huid) +
-    sText(L, 37, '1', fit(art, '1', IW)) +
-    sText(L, 50, '1', wtS) + sText(S_W - L - pur.length * FONT_W['1'], 50, '1', pur) +
-    sText(L, 64, '1', fit(centre, '1', IW));
+    sText(L, 4, '2', fit(`HUID - ${huid}`, '2', IW)) +
+    sText(L, 29, '1', fit(ART, '1', IW)) +
+    sText(L, 44, '1', WT) + sText(S_W - L - PUR.length * FONT_W['1'], 44, '1', PUR) +
+    sText(L, 62, '1', fit(centre, '1', IW));
 }
 
 function buildTSPLSmall(p) {
@@ -197,7 +215,7 @@ function buildTSPLSmall(p) {
     art:    clean(p.article).toUpperCase(),
     wt:     w3 ? `${w3}g` : '',
     pur:    clean(p.purity),                            // purity code, as in the templates
-    centre: clean(p.ahc_name).toUpperCase(),
+    centre: clean(CENTRE_NAME || p.ahc_name).toUpperCase(),
   };
   const url = p.detail_url || `HD-${f.huid}`;
 
@@ -232,7 +250,7 @@ function buildTSPL(p) {
   const huid   = clean(p.huid);
   const serial = clean(p.serial);
   const article= clean(p.article).toUpperCase().slice(0, 20);
-  const centre = clean(p.ahc_name).toUpperCase().slice(0, 28);
+  const centre = clean(CENTRE_NAME || p.ahc_name).toUpperCase().slice(0, 28);
   // Weight always shown to 3 decimals.
   const wn = parseFloat(p.weight);
   const w3 = isFinite(wn) ? wn.toFixed(3) : clean(p.weight);

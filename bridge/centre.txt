@@ -1,0 +1,3 @@
+# Centre name printed on the tag (overrides the name from the BIS portal).
+# Delete this file, or leave only # lines, to use the portal name again.
+RADHE HALLMARK
