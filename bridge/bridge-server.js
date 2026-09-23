@@ -116,66 +116,103 @@ const QR_DENSITY = 5;          // was 6 — a touch lighter to reduce module ble
 const QR_SPEED   = 3;          // was 4 — slightly slower for cleaner edges
 
 /* ---- SMALL TAG: 82 x 12 mm (printable 81 x 12) @203dpi = 8 dots/mm ----
-   Canvas 656 x 96 dots. Printer X=0 is at the TIP of the thin tail. From a
-   real test print on the TVSE LP 46 Neo, the tag maps to X like this:
-     X   0..~210  : thin tail (≈26 mm, only 2-3 mm tall) — print NOTHING here
-     X ~210..~432 : body, panel A (between tail and fold line) — TEXT
-     X ~432..656  : body, panel B (after the fold line)        — QR
-   Text is rotated 180° so it reads upright when the tag is held with the
-   body on the left and the tail on the right. With 180° rotation each TEXT's
-   (x,y) is the glyph's far corner: text runs toward smaller X, and rows with a
-   larger y sit higher on the tag.
-   Tune the constants below after a test print if content is offset. */
-const S_TEXT_X    = 422;   // text anchor X (panel A, just before the fold line)
-const S_QR_RIGHT  = 628;   // QR right edge X (panel B, ~3.5 mm margin from body end)
-const S_QR_MIN_X  = 446;   // QR never starts before the fold line + margin
-const S_USABLE_H  = 76;    // max QR height (of 96) — leaves ~2.5 mm white top+bottom
+   Canvas 656 x 96 dots. Printer X=0 is at the TIP of the thin tail:
+     X   0..~250  : thin tail (only 2-3 mm tall) — print NOTHING here
+     X ~250..~470 : body, text panel — the chosen design (d1..d5)
+     X ~480..656  : body, QR panel
+   The text panel is drawn rotated 180° so it reads upright with the body on
+   the left and the tail on the right. Designs are laid out in "tag space":
+   u = dots from the panel's left edge (as read), v = dots from its top edge.
+   S_X0 / S_TOP map tag space to printer dots (X = S_X0 - u, y = S_TOP - v).
+   Tune these after a test print if the design sits off the tag. */
+const S_X0        = 466;   // printer X of the design's left edge (as read)
+const S_TOP       = 94;    // printer y of the design's top edge (as read)
+const S_W         = 190;   // design width  (dots, ~24 mm)
+const S_H         = 80;    // design height (dots, 10 mm)
+const S_QR_RIGHT  = 640;   // QR right edge X (toward the body end)
+const S_QR_MIN_X  = 480;   // QR never starts inside the text panel
+const S_QR_MAX_H  = 66;    // max QR size (~8 mm) so it never reaches the tag edge
+const S_QR_MID_Y  = 53;    // QR vertical centre, level with the design's centre
 const S_GAP_MM    = 3;     // gap between tags on the roll (measured ~3 mm)
-const S_TEXT_CH   = 20;    // max characters per text line in panel A
+
+// Tag-space drawing helpers (all return TSPL lines).
+const sText = (u, v, font, s) =>
+  s ? `TEXT ${S_X0 - u},${S_TOP - v},"${font}",180,1,1,"${s}"\n` : '';
+const sBox  = (u1, v1, u2, v2, t) => `BOX ${S_X0 - u2},${S_TOP - v2},${S_X0 - u1},${S_TOP - v1},${t}\n`;
+const sBar  = (u1, v1, u2, v2) => `BAR ${S_X0 - u2},${S_TOP - v2},${u2 - u1},${v2 - v1}\n`;
+const sRev  = (u1, v1, u2, v2) => `REVERSE ${S_X0 - u2},${S_TOP - v2},${u2 - u1},${v2 - v1}\n`;
+const FONT_W = { '1': 8, '2': 12, '3': 16, '4': 24 };
+const fit = (s, font, width) => ('' + s).slice(0, Math.floor(width / FONT_W[font]));
+
+// The 5 designs from the extension's template picker, sized for 190 x 80 dots.
+// Every design shows Centre, HUID, Article, Weight and Purity (QR is separate).
+function smallDesign(d, f) {
+  const { huid, art, wt, pur, centre } = f;
+  const L = 6, IW = S_W - 2 * L;                       // inner left + width
+  if (d === 'd2') {                                     // Header bar
+    return sText(L, 2, '1', fit(centre, '1', IW)) + sRev(0, 0, S_W, 16) +
+      sBox(0, 0, S_W, S_H, 2) +                         // after REVERSE so its border stays black
+      sText(L, 20, '1', 'HUID') +
+      sText(L, 32, '2', huid) +
+      sText(L, 60, '1', fit(`${art} ${wt} ${pur}`, '1', IW));
+  }
+  if (d === 'd3') {                                     // Big HUID
+    return sBar(0, 0, 4, S_H) +
+      sText(10, 2, '1', fit(centre, '1', S_W - 12)) +
+      sText(10, 17, '4', huid) +
+      sText(10, 53, '1', fit(art, '1', S_W - 12)) +
+      sText(10, 67, '1', fit(`Wt ${wt}  ${pur}`, '1', S_W - 12));
+  }
+  if (d === 'd4') {                                     // Labeled box
+    const VX = 46;
+    return sBox(0, 0, S_W, S_H, 2) +
+      sText(L, 3, '1', fit(centre, '1', IW)) + sBar(L, 17, S_W - L, 19) +
+      sText(L, 23, '1', 'HUID') + sText(VX, 23, '1', huid) +
+      sText(L, 37, '1', 'ART')  + sText(VX, 37, '1', fit(art, '1', S_W - VX - L)) +
+      sText(L, 51, '1', 'WT')   + sText(VX, 51, '1', wt) +
+      sText(L, 65, '1', 'PUR')  + sText(VX, 65, '1', pur);
+  }
+  if (d === 'd5') {                                     // Minimal
+    return sText(2, 2, '1', fit(centre, '1', S_W - 4)) +
+      sText(2, 17, '4', huid) +
+      sBar(2, 53, S_W - 4, 55) +
+      sText(2, 60, '1', fit(`${art} ${wt} ${pur}`, '1', S_W - 4));
+  }
+  // d1 (default): Bordered grid
+  const wtS = `Wt ${wt}`;
+  return sBox(0, 0, S_W, S_H, 2) +
+    sText(L, 3, '1', 'HUID') +
+    sText(L, 14, '2', huid) +
+    sText(L, 37, '1', fit(art, '1', IW)) +
+    sText(L, 50, '1', wtS) + sText(S_W - L - pur.length * FONT_W['1'], 50, '1', pur) +
+    sText(L, 64, '1', fit(centre, '1', IW));
+}
+
 function buildTSPLSmall(p) {
-  const purMap = { '999':'999 24K','958':'958 23K','916':'916 22K','833':'833 20K','750':'750 18K','585':'585 14K','375':'375 9K' };
   const clean  = (v) => ((v == null ? '' : '' + v).replace(/"/g, '').trim());
-  const purity = purMap[p.purity] || clean(p.purity);
-  const huid   = clean(p.huid);
-  const serial = clean(p.serial);
-  const article= clean(p.article).toUpperCase().slice(0, S_TEXT_CH);
-  const centre = clean(p.ahc_name).toUpperCase();
   const wn = parseFloat(p.weight);
   const w3 = isFinite(wn) ? wn.toFixed(3) : clean(p.weight);
-  const wtg = w3 ? `${w3}g` : '';
-  const url = p.detail_url || `HD-${huid}`;
-
-  // Centre name wrapped into at most 2 lines that fit panel A.
-  const words = centre.split(/\s+/).filter(Boolean);
-  const cl = []; let cur = '';
-  for (const w of words) {
-    if ((cur + ' ' + w).trim().length <= S_TEXT_CH) cur = (cur + ' ' + w).trim();
-    else { if (cur) cl.push(cur); cur = w.slice(0, S_TEXT_CH); }
-  }
-  if (cur) cl.push(cur);
-
-  // Panel A text, rotated 180°. Rows listed top-to-bottom as read on the tag;
-  // y is the row's top edge on the tag (glyph spans y-h..y in printer dots).
-  const row = (y, font, s) => s ? `TEXT ${S_TEXT_X},${y},"${font}",180,1,1,"${s}"\n` : '';
-  const text =
-    row(93, '2', huid) +                                   // HUID (big)
-    row(71, '1', `${wtg} ${purity}`.trim()) +               // weight + purity
-    row(57, '1', article) +                                 // article
-    row(43, '1', serial) +                                  // serial
-    row(29, '1', cl[0] || '') +                             // centre line 1
-    row(15, '1', cl[1] || '');                              // centre line 2
+  const f = {
+    huid:   clean(p.huid),
+    art:    clean(p.article).toUpperCase(),
+    wt:     w3 ? `${w3}g` : '',
+    pur:    clean(p.purity),                            // purity code, as in the templates
+    centre: clean(p.ahc_name).toUpperCase(),
+  };
+  const url = p.detail_url || `HD-${f.huid}`;
 
   const header =
     `SIZE 82 mm, 12 mm\nGAP ${S_GAP_MM} mm, 0 mm\nSPEED ${QR_SPEED}\nDENSITY ${QR_DENSITY}\n` +
-    `DIRECTION 0\nREFERENCE 0,0\nCLS\n${text}`;
+    `DIRECTION 0\nREFERENCE 0,0\nCLS\n${smallDesign(p.template_detail, f)}`;
 
-  // Preferred: render the extension-supplied QR matrix as a bitmap.
+  // Preferred: render the extension-supplied QR matrix as a bitmap — small
+  // (2-3 dots per module, at most ~8 mm) and centred on the design's height.
   if (Array.isArray(p.qr_rows) && p.qr_rows.length) {
     const n = p.qr_rows.length;
-    const scale = Math.max(2, Math.min(3, Math.floor(S_USABLE_H / n)));
+    const scale = Math.max(2, Math.min(3, Math.floor(S_QR_MAX_H / n)));
     const bmp = qrBitmap(p.qr_rows, scale);
-    const qx = Math.max(S_QR_MIN_X, S_QR_RIGHT - bmp.widthPx);   // panel B, clear of the fold
-    const qy = Math.max(2, Math.floor((96 - bmp.height) / 2));
+    const qx = Math.max(S_QR_MIN_X, S_QR_RIGHT - bmp.widthPx);
+    const qy = Math.max(2, Math.round(S_QR_MID_Y - bmp.height / 2));
     return Buffer.concat([
       Buffer.from(header, 'latin1'),
       Buffer.from(`BITMAP ${qx},${qy},${bmp.widthBytes},${bmp.height},0,`, 'latin1'),
@@ -183,8 +220,8 @@ function buildTSPLSmall(p) {
       Buffer.from('\nPRINT 1,1\n', 'latin1'),
     ]);
   }
-  // Fallback: let the printer generate the QR.
-  return Buffer.from(header + `QRCODE ${S_QR_MIN_X + 20},6,M,3,A,0,"${url}"\n` + 'PRINT 1,1\n', 'latin1');
+  // Fallback: let the printer generate the QR (cell size 2 keeps it small).
+  return Buffer.from(header + `QRCODE ${S_QR_MIN_X + 40},${S_QR_MID_Y - 30},M,2,A,0,"${url}"\n` + 'PRINT 1,1\n', 'latin1');
 }
 
 function buildTSPL(p) {
