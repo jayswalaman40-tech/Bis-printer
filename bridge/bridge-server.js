@@ -157,53 +157,67 @@ const sText = (u, v, font, s) =>
 const sBox  = (u1, v1, u2, v2, t) => `BOX ${S_X0 - u2},${S_TOP - v2},${S_X0 - u1},${S_TOP - v1},${t}\n`;
 const sBar  = (u1, v1, u2, v2) => `BAR ${S_X0 - u2},${S_TOP - v2},${u2 - u1},${v2 - v1}\n`;
 const sRev  = (u1, v1, u2, v2) => `REVERSE ${S_X0 - u2},${S_TOP - v2},${u2 - u1},${v2 - v1}\n`;
-const FONT_W = { '1': 8, '2': 12, '3': 16, '4': 24 };
+// Character advance in dots, measured from a real TVSE LP 46 Neo print (font 1
+// prints ~10 dots per character, not the nominal 8). Used for fitting text.
+const FONT_W = { '1': 10, '2': 14, '3': 18, '4': 26 };
 const fit = (s, font, width) => ('' + s).slice(0, Math.floor(width / FONT_W[font]));
 
 // The 5 designs from the extension's template picker, sized for 190 x 80 dots.
-// Every design shows Centre, HUID, Article, Weight and Purity (QR is separate),
-// each field written as "LABEL - value".
+// Every design shows Centre, HUID, Article, Weight and Purity (QR is separate).
+// Fields are printed as three aligned columns — LABEL  -  value — so the dash
+// sits in the same place on every row with a space either side.
+const COL_DASH = 50;   // dash column, relative to the row's left edge
+const COL_VAL  = 68;   // value column, relative to the row's left edge
+function fieldRow(x, v, label, value, vFont) {
+  const vf = vFont || '1';
+  const dy = vf === '1' ? 0 : -4;                      // bigger value font sits a little higher
+  return sText(x, v, '1', label) + sText(x + COL_DASH, v, '1', '-') +
+    sText(x + COL_VAL, v + dy, vf, fit(value, vf, S_W - x - COL_VAL - 4));
+}
 function smallDesign(d, f) {
   const { huid, art, wt, pur, centre } = f;
   const L = 6, IW = S_W - 2 * L;                       // inner left + width
-  const ART = `ART - ${art}`, WT = `WT - ${wt}`, PUR = `PUR - ${pur}`;
   if (d === 'd2') {                                     // Header bar
     return sText(L, 2, '1', fit(centre, '1', IW)) + sRev(0, 0, S_W, 16) +
       sBox(0, 0, S_W, S_H, 2) +                         // after REVERSE so its border stays black
-      sText(L, 22, '2', fit(`HUID - ${huid}`, '2', IW)) +
-      sText(L, 47, '1', fit(ART, '1', IW)) +
-      sText(L, 61, '1', fit(`${WT} ${PUR}`, '1', IW));
+      fieldRow(L, 23, 'HUID', huid, '2') +
+      fieldRow(L, 41, 'ART', art) +
+      fieldRow(L, 53, 'WT', wt) +
+      fieldRow(L, 65, 'PUR', pur);
   }
   if (d === 'd3') {                                     // Big HUID
-    const W3 = S_W - 12;
+    const X = 10;
     return sBar(0, 0, 4, S_H) +
-      sText(10, 2, '1', fit(centre, '1', W3)) +
-      sText(10, 16, '4', huid) +
-      sText(10, 52, '1', fit(ART, '1', W3)) +
-      sText(10, 66, '1', fit(`${WT} ${PUR}`, '1', W3));
+      sText(X, 1, '1', fit(centre, '1', S_W - X)) +
+      sText(X, 14, '3', huid) +
+      fieldRow(X, 42, 'ART', art) +
+      fieldRow(X, 55, 'WT', wt) +
+      fieldRow(X, 68, 'PUR', pur);
   }
   if (d === 'd4') {                                     // Labeled box
-    const VX = 62;                                      // values after "HUID - "
     return sBox(0, 0, S_W, S_H, 2) +
       sText(L, 3, '1', fit(centre, '1', IW)) + sBar(L, 17, S_W - L, 19) +
-      sText(L, 23, '1', 'HUID -') + sText(VX, 23, '1', huid) +
-      sText(L, 37, '1', 'ART  -') + sText(VX, 37, '1', fit(art, '1', S_W - VX - L)) +
-      sText(L, 51, '1', 'WT   -') + sText(VX, 51, '1', wt) +
-      sText(L, 65, '1', 'PUR  -') + sText(VX, 65, '1', pur);
+      fieldRow(L, 23, 'HUID', huid) +
+      fieldRow(L, 37, 'ART', art) +
+      fieldRow(L, 51, 'WT', wt) +
+      fieldRow(L, 65, 'PUR', pur);
   }
   if (d === 'd5') {                                     // Minimal
-    return sText(2, 2, '1', fit(centre, '1', S_W - 4)) +
-      sText(2, 16, '4', huid) +
-      sBar(2, 51, S_W - 4, 53) +
-      sText(2, 56, '1', fit(ART, '1', S_W - 4)) +
-      sText(2, 68, '1', fit(`${WT} ${PUR}`, '1', S_W - 4));
+    const X = 2;
+    return sText(X, 1, '1', fit(centre, '1', S_W - 4)) +
+      sText(X, 13, '3', huid) +
+      sBar(X, 40, S_W - 4, 42) +
+      fieldRow(X, 44, 'ART', art) +
+      fieldRow(X, 56, 'WT', wt) +
+      fieldRow(X, 68, 'PUR', pur);
   }
   // d1 (default): Bordered grid
   return sBox(0, 0, S_W, S_H, 2) +
-    sText(L, 4, '2', fit(`HUID - ${huid}`, '2', IW)) +
-    sText(L, 29, '1', fit(ART, '1', IW)) +
-    sText(L, 44, '1', WT) + sText(S_W - L - PUR.length * FONT_W['1'], 44, '1', PUR) +
-    sText(L, 62, '1', fit(centre, '1', IW));
+    fieldRow(L, 7, 'HUID', huid, '2') +
+    fieldRow(L, 26, 'ART', art) +
+    fieldRow(L, 39, 'WT', wt) +
+    fieldRow(L, 52, 'PUR', pur) +
+    sText(L, 65, '1', fit(centre, '1', IW));
 }
 
 function buildTSPLSmall(p) {
