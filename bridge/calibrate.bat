@@ -9,10 +9,18 @@ for /f "usebackq eol=# tokens=* delims=" %%p in ("%~dp0printer.txt") do (
 )
 if not defined PRINTER set "PRINTER=TVSELP46"
 
-echo Sending gap calibration to "%PRINTER%"...
+REM Tag size from tag.txt: "small" = 82x12 mm (3 mm gap), else 100x18 mm.
+set "TAG="
+if exist "%~dp0tag.txt" for /f "usebackq eol=# tokens=* delims=" %%t in ("%~dp0tag.txt") do (
+  if not defined TAG set "TAG=%%t"
+)
+set "LSIZE=100 mm, 18 mm" & set "LGAP=2 mm, 0 mm"
+if /i "%TAG%"=="small" (set "LSIZE=82 mm, 12 mm" & set "LGAP=3 mm, 0 mm")
+
+echo Sending gap calibration (%LSIZE%) to "%PRINTER%"...
 > "%TEMP%\hd_cal.tspl" (
-  echo SIZE 100 mm, 18 mm
-  echo GAP 2 mm, 0 mm
+  echo SIZE %LSIZE%
+  echo GAP %LGAP%
   echo DIRECTION 0
   echo GAPDETECT
 )

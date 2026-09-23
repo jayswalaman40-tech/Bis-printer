@@ -116,45 +116,65 @@ const QR_DENSITY = 5;          // was 6 — a touch lighter to reduce module ble
 const QR_SPEED   = 3;          // was 4 — slightly slower for cleaner edges
 
 /* ---- SMALL TAG: 82 x 12 mm (printable 81 x 12) @203dpi = 8 dots/mm ----
-   Canvas 656 x 96 dots. A jewellery "barbell" tag that folds in the middle:
-     LEFT end  (X 16..~300)  : HUID / Weight+Purity / Article / Serial / Centre
-     middle    (~300..S_QRX) : blank fold + QR quiet zone
-     RIGHT end (QR)          : QR code, vertically centred
-   Tune S_LEFT / S_QR_RIGHT below after a test print if content is offset. */
-const S_LEFT      = 16;    // left text block start X (dots)
-const S_QR_RIGHT  = 640;   // QR right edge X (near the right end of the tag)
+   Canvas 656 x 96 dots. Printer X=0 is at the TIP of the thin tail. From a
+   real test print on the TVSE LP 46 Neo, the tag maps to X like this:
+     X   0..~210  : thin tail (≈26 mm, only 2-3 mm tall) — print NOTHING here
+     X ~210..~432 : body, panel A (between tail and fold line) — TEXT
+     X ~432..656  : body, panel B (after the fold line)        — QR
+   Text is rotated 180° so it reads upright when the tag is held with the
+   body on the left and the tail on the right. With 180° rotation each TEXT's
+   (x,y) is the glyph's far corner: text runs toward smaller X, and rows with a
+   larger y sit higher on the tag.
+   Tune the constants below after a test print if content is offset. */
+const S_TEXT_X    = 422;   // text anchor X (panel A, just before the fold line)
+const S_QR_RIGHT  = 640;   // QR right edge X (panel B, near the body end)
+const S_QR_MIN_X  = 446;   // QR never starts before the fold line + margin
 const S_USABLE_H  = 92;    // usable height for the QR (of 96)
+const S_GAP_MM    = 3;     // gap between tags on the roll (measured ~3 mm)
+const S_TEXT_CH   = 20;    // max characters per text line in panel A
 function buildTSPLSmall(p) {
   const purMap = { '999':'999 24K','958':'958 23K','916':'916 22K','833':'833 20K','750':'750 18K','585':'585 14K','375':'375 9K' };
   const clean  = (v) => ((v == null ? '' : '' + v).replace(/"/g, '').trim());
   const purity = purMap[p.purity] || clean(p.purity);
   const huid   = clean(p.huid);
   const serial = clean(p.serial);
-  const article= clean(p.article).toUpperCase().slice(0, 24);
-  const centre = clean(p.ahc_name).toUpperCase().slice(0, 34);
+  const article= clean(p.article).toUpperCase().slice(0, S_TEXT_CH);
+  const centre = clean(p.ahc_name).toUpperCase();
   const wn = parseFloat(p.weight);
   const w3 = isFinite(wn) ? wn.toFixed(3) : clean(p.weight);
   const wtg = w3 ? `${w3}g` : '';
   const url = p.detail_url || `HD-${huid}`;
 
-  // LEFT end — compact text stack (5 rows within 96 dots).
-  const left =
-    `TEXT ${S_LEFT},3,"2",0,1,1,"${huid}"\n` +                    // HUID (big)
-    `TEXT ${S_LEFT},30,"1",0,1,1,"${wtg}  ${purity}"\n` +         // weight + purity
-    `TEXT ${S_LEFT},44,"1",0,1,1,"${article}"\n` +               // article
-    `TEXT ${S_LEFT},58,"1",0,1,1,"SN ${serial}"\n` +            // serial
-    `TEXT ${S_LEFT},74,"1",0,1,1,"${centre}"\n`;                 // centre name (1 line)
+  // Centre name wrapped into at most 2 lines that fit panel A.
+  const words = centre.split(/\s+/).filter(Boolean);
+  const cl = []; let cur = '';
+  for (const w of words) {
+    if ((cur + ' ' + w).trim().length <= S_TEXT_CH) cur = (cur + ' ' + w).trim();
+    else { if (cur) cl.push(cur); cur = w.slice(0, S_TEXT_CH); }
+  }
+  if (cur) cl.push(cur);
+
+  // Panel A text, rotated 180°. Rows listed top-to-bottom as read on the tag;
+  // y is the row's top edge on the tag (glyph spans y-h..y in printer dots).
+  const row = (y, font, s) => s ? `TEXT ${S_TEXT_X},${y},"${font}",180,1,1,"${s}"\n` : '';
+  const text =
+    row(93, '2', huid) +                                   // HUID (big)
+    row(71, '1', `${wtg} ${purity}`.trim()) +               // weight + purity
+    row(57, '1', article) +                                 // article
+    row(43, '1', serial) +                                  // serial
+    row(29, '1', cl[0] || '') +                             // centre line 1
+    row(15, '1', cl[1] || '');                              // centre line 2
 
   const header =
-    `SIZE 82 mm, 12 mm\nGAP 2 mm, 0 mm\nSPEED ${QR_SPEED}\nDENSITY ${QR_DENSITY}\n` +
-    `DIRECTION 0\nREFERENCE 0,0\nCLS\n${left}`;
+    `SIZE 82 mm, 12 mm\nGAP ${S_GAP_MM} mm, 0 mm\nSPEED ${QR_SPEED}\nDENSITY ${QR_DENSITY}\n` +
+    `DIRECTION 0\nREFERENCE 0,0\nCLS\n${text}`;
 
   // Preferred: render the extension-supplied QR matrix as a bitmap.
   if (Array.isArray(p.qr_rows) && p.qr_rows.length) {
     const n = p.qr_rows.length;
     const scale = Math.max(2, Math.min(4, Math.floor(S_USABLE_H / n)));
     const bmp = qrBitmap(p.qr_rows, scale);
-    const qx = Math.max(320, S_QR_RIGHT - bmp.widthPx);   // right end, clear of the text
+    const qx = Math.max(S_QR_MIN_X, S_QR_RIGHT - bmp.widthPx);   // panel B, clear of the fold
     const qy = Math.max(2, Math.floor((96 - bmp.height) / 2));
     return Buffer.concat([
       Buffer.from(header, 'latin1'),
@@ -164,7 +184,7 @@ function buildTSPLSmall(p) {
     ]);
   }
   // Fallback: let the printer generate the QR.
-  return Buffer.from(header + `QRCODE 470,6,M,3,A,0,"${url}"\n` + 'PRINT 1,1\n', 'latin1');
+  return Buffer.from(header + `QRCODE ${S_QR_MIN_X + 20},6,M,3,A,0,"${url}"\n` + 'PRINT 1,1\n', 'latin1');
 }
 
 function buildTSPL(p) {
