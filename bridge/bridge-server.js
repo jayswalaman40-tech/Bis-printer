@@ -35,6 +35,22 @@ function resolvePrinterName() {
 }
 const PRINTER_NAME = resolvePrinterName();   // exact Windows printer/share name
 
+// ---- Tag size ----  'large' = 100x18 mm (default) | 'small' = 82x12 mm.
+// Set via HALLMARK_TAG env, or a tag.txt file next to this script, else 'large'.
+function resolveTag() {
+  if (process.env.HALLMARK_TAG && process.env.HALLMARK_TAG.trim()) return process.env.HALLMARK_TAG.trim().toLowerCase();
+  try {
+    const f = path.join(__dirname, 'tag.txt');
+    if (fs.existsSync(f)) {
+      const line = fs.readFileSync(f, 'utf8').split(/\r?\n/).map(s => s.trim())
+        .filter(s => s && !s.startsWith('#'))[0];
+      if (line) return line.toLowerCase();
+    }
+  } catch (e) {}
+  return 'large';
+}
+const TAG_SIZE = resolveTag();   // 'large' or 'small'
+
 // TEST MODE — for a full end-to-end trial without a printer.
 // Enable with `node bridge-server.js --mock` (or start-test.bat), or by
 // setting HALLMARK_MOCK=1. In test mode each job's TSPL is saved to ./jobs
@@ -46,7 +62,7 @@ const JOBS_DIR  = path.join(__dirname, 'jobs');
 app.use(cors({ origin: 'https://huid.manakonline.in' }));
 app.use(express.json());
 
-app.get('/health', (req, res) => res.json({ ok: true, printer: PRINTER_NAME, mock: MOCK_MODE }));
+app.get('/health', (req, res) => res.json({ ok: true, printer: PRINTER_NAME, tag: TAG_SIZE, mock: MOCK_MODE }));
 
 app.post('/print-tag', async (req, res) => {
   const p = req.body;
@@ -98,7 +114,61 @@ const BC_X   = SKIP_X + 264;   // QR after the details; leaves room for the
 // Range 0-15. SPEED range ~1-5 (ips); moderate speed keeps edges clean.
 const QR_DENSITY = 5;          // was 6 — a touch lighter to reduce module bleed
 const QR_SPEED   = 3;          // was 4 — slightly slower for cleaner edges
+
+/* ---- SMALL TAG: 82 x 12 mm (printable 81 x 12) @203dpi = 8 dots/mm ----
+   Canvas 656 x 96 dots. A jewellery "barbell" tag that folds in the middle:
+     LEFT end  (X 16..~300)  : HUID / Weight+Purity / Article / Serial / Centre
+     middle    (~300..S_QRX) : blank fold + QR quiet zone
+     RIGHT end (QR)          : QR code, vertically centred
+   Tune S_LEFT / S_QR_RIGHT below after a test print if content is offset. */
+const S_LEFT      = 16;    // left text block start X (dots)
+const S_QR_RIGHT  = 640;   // QR right edge X (near the right end of the tag)
+const S_USABLE_H  = 92;    // usable height for the QR (of 96)
+function buildTSPLSmall(p) {
+  const purMap = { '999':'999 24K','958':'958 23K','916':'916 22K','833':'833 20K','750':'750 18K','585':'585 14K','375':'375 9K' };
+  const clean  = (v) => ((v == null ? '' : '' + v).replace(/"/g, '').trim());
+  const purity = purMap[p.purity] || clean(p.purity);
+  const huid   = clean(p.huid);
+  const serial = clean(p.serial);
+  const article= clean(p.article).toUpperCase().slice(0, 24);
+  const centre = clean(p.ahc_name).toUpperCase().slice(0, 34);
+  const wn = parseFloat(p.weight);
+  const w3 = isFinite(wn) ? wn.toFixed(3) : clean(p.weight);
+  const wtg = w3 ? `${w3}g` : '';
+  const url = p.detail_url || `HD-${huid}`;
+
+  // LEFT end — compact text stack (5 rows within 96 dots).
+  const left =
+    `TEXT ${S_LEFT},3,"2",0,1,1,"${huid}"\n` +                    // HUID (big)
+    `TEXT ${S_LEFT},30,"1",0,1,1,"${wtg}  ${purity}"\n` +         // weight + purity
+    `TEXT ${S_LEFT},44,"1",0,1,1,"${article}"\n` +               // article
+    `TEXT ${S_LEFT},58,"1",0,1,1,"SN ${serial}"\n` +            // serial
+    `TEXT ${S_LEFT},74,"1",0,1,1,"${centre}"\n`;                 // centre name (1 line)
+
+  const header =
+    `SIZE 82 mm, 12 mm\nGAP 2 mm, 0 mm\nSPEED ${QR_SPEED}\nDENSITY ${QR_DENSITY}\n` +
+    `DIRECTION 0\nREFERENCE 0,0\nCLS\n${left}`;
+
+  // Preferred: render the extension-supplied QR matrix as a bitmap.
+  if (Array.isArray(p.qr_rows) && p.qr_rows.length) {
+    const n = p.qr_rows.length;
+    const scale = Math.max(2, Math.min(4, Math.floor(S_USABLE_H / n)));
+    const bmp = qrBitmap(p.qr_rows, scale);
+    const qx = Math.max(320, S_QR_RIGHT - bmp.widthPx);   // right end, clear of the text
+    const qy = Math.max(2, Math.floor((96 - bmp.height) / 2));
+    return Buffer.concat([
+      Buffer.from(header, 'latin1'),
+      Buffer.from(`BITMAP ${qx},${qy},${bmp.widthBytes},${bmp.height},0,`, 'latin1'),
+      bmp.data,
+      Buffer.from('\nPRINT 1,1\n', 'latin1'),
+    ]);
+  }
+  // Fallback: let the printer generate the QR.
+  return Buffer.from(header + `QRCODE 470,6,M,3,A,0,"${url}"\n` + 'PRINT 1,1\n', 'latin1');
+}
+
 function buildTSPL(p) {
+  if (TAG_SIZE === 'small') return buildTSPLSmall(p);
   const purMap = { '999':'999 24K','958':'958 23K','916':'916 22K','833':'833 20K','750':'750 18K','585':'585 14K','375':'375 9K' };
   const clean  = (v) => ((v == null ? '' : '' + v).replace(/"/g, '').trim());
   const purity = purMap[p.purity] || clean(p.purity);
