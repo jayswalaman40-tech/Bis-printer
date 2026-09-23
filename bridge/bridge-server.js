@@ -127,9 +127,9 @@ const QR_SPEED   = 3;          // was 4 — slightly slower for cleaner edges
    larger y sit higher on the tag.
    Tune the constants below after a test print if content is offset. */
 const S_TEXT_X    = 422;   // text anchor X (panel A, just before the fold line)
-const S_QR_RIGHT  = 640;   // QR right edge X (panel B, near the body end)
+const S_QR_RIGHT  = 628;   // QR right edge X (panel B, ~3.5 mm margin from body end)
 const S_QR_MIN_X  = 446;   // QR never starts before the fold line + margin
-const S_USABLE_H  = 92;    // usable height for the QR (of 96)
+const S_USABLE_H  = 76;    // max QR height (of 96) — leaves ~2.5 mm white top+bottom
 const S_GAP_MM    = 3;     // gap between tags on the roll (measured ~3 mm)
 const S_TEXT_CH   = 20;    // max characters per text line in panel A
 function buildTSPLSmall(p) {
@@ -172,7 +172,7 @@ function buildTSPLSmall(p) {
   // Preferred: render the extension-supplied QR matrix as a bitmap.
   if (Array.isArray(p.qr_rows) && p.qr_rows.length) {
     const n = p.qr_rows.length;
-    const scale = Math.max(2, Math.min(4, Math.floor(S_USABLE_H / n)));
+    const scale = Math.max(2, Math.min(3, Math.floor(S_USABLE_H / n)));
     const bmp = qrBitmap(p.qr_rows, scale);
     const qx = Math.max(S_QR_MIN_X, S_QR_RIGHT - bmp.widthPx);   // panel B, clear of the fold
     const qy = Math.max(2, Math.floor((96 - bmp.height) / 2));
