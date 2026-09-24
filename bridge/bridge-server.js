@@ -133,31 +133,31 @@ const QR_SPEED   = 3;          // was 4 — slightly slower for cleaner edges
 
 /* ---- SMALL TAG: 82 x 12 mm (printable 81 x 12) @203dpi = 8 dots/mm ----
    Canvas 656 x 96 dots. Printer X=0 is at the TIP of the thin tail (dandi).
-   Read with the body on the left and the tail on the right:
-     X 570..636 : body end        — QR (upright), with "TAG - n" beside it
-     X ~441     : fold line (nothing printed across it)
-     X 232..422 : next to the tail — the chosen design box (d1..d5)
+   The tag is read with the tail on the LEFT and the body on the right, so
+   everything prints unrotated:
      X   0..~225: thin tail (2-3 mm tall) — print NOTHING here
-   Everything is drawn rotated 180° so it reads upright in that orientation.
-   Designs are laid out in "tag space": u = dots from the box's left edge (as
-   read), v = dots from its top edge; X = S_X0 - u, y = S_TOP - v.
+     X 232..422 : next to the tail — the chosen design box (d1..d5)
+     X ~441     : fold line (nothing printed across it)
+     X 449..636 : body end — "TAG - n", then the QR at the far end
+   Designs are laid out in "tag space": u = dots from the box's left edge,
+   v = dots from its top edge; X = S_X0 + u, y = S_TOP + v.
    Tune the constants below after a test print if something sits off the tag. */
-const S_X0        = 422;   // printer X of the design box's left edge (as read), clear of the fold
-const S_TOP       = 94;    // printer y of the design's top edge (as read)
-const S_W         = 190;   // design width  (dots, ~24 mm) — ends at X 232, just before the tail
+const S_X0        = 232;   // printer X of the design box's left edge, just after the tail
+const S_TOP       = 14;    // printer y of the design's top edge
+const S_W         = 190;   // design width  (dots, ~24 mm) — ends at X 422, clear of the fold
 const S_H         = 80;    // design height (dots, 10 mm)
-const S_QR_LEFT   = 636;   // QR's left edge as read (printer X, ~2.5 mm from the body end)
-const S_TAG_MIN_X = 449;   // "TAG - n" must end before the fold (printer X)
+const S_QR_RIGHT  = 636;   // QR's right edge (printer X, ~2.5 mm from the body end)
+const S_TAG_MIN_X = 449;   // "TAG - n" must start after the fold (printer X)
 const S_QR_MAX_H  = 66;    // max QR size (~8 mm) so it never reaches the tag edge
-const S_QR_MID_Y  = 53;    // QR vertical centre, level with the design's centre
+const S_QR_MID_Y  = 54;    // QR vertical centre, level with the design's centre
 const S_GAP_MM    = 3;     // gap between tags on the roll (measured ~3 mm)
 
 // Tag-space drawing helpers (all return TSPL lines).
 const sText = (u, v, font, s) =>
-  s ? `TEXT ${S_X0 - u},${S_TOP - v},"${font}",180,1,1,"${s}"\n` : '';
-const sBox  = (u1, v1, u2, v2, t) => `BOX ${S_X0 - u2},${S_TOP - v2},${S_X0 - u1},${S_TOP - v1},${t}\n`;
-const sBar  = (u1, v1, u2, v2) => `BAR ${S_X0 - u2},${S_TOP - v2},${u2 - u1},${v2 - v1}\n`;
-const sRev  = (u1, v1, u2, v2) => `REVERSE ${S_X0 - u2},${S_TOP - v2},${u2 - u1},${v2 - v1}\n`;
+  s ? `TEXT ${S_X0 + u},${S_TOP + v},"${font}",0,1,1,"${s}"\n` : '';
+const sBox  = (u1, v1, u2, v2, t) => `BOX ${S_X0 + u1},${S_TOP + v1},${S_X0 + u2},${S_TOP + v2},${t}\n`;
+const sBar  = (u1, v1, u2, v2) => `BAR ${S_X0 + u1},${S_TOP + v1},${u2 - u1},${v2 - v1}\n`;
+const sRev  = (u1, v1, u2, v2) => `REVERSE ${S_X0 + u1},${S_TOP + v1},${u2 - u1},${v2 - v1}\n`;
 // Character advance in dots, measured from a real TVSE LP 46 Neo print (font 1
 // prints ~10 dots per character, not the nominal 8). Used for fitting text.
 const FONT_W = { '1': 10, '2': 14, '3': 18, '4': 26 };
@@ -242,16 +242,17 @@ function buildTSPLSmall(p) {
     `SIZE 82 mm, 12 mm\nGAP ${S_GAP_MM} mm, 0 mm\nSPEED ${QR_SPEED}\nDENSITY ${QR_DENSITY}\n` +
     `DIRECTION 0\nREFERENCE 0,0\nCLS\n${smallDesign(p.template_detail, f)}`;
 
-  // "TAG - n" to the right of the QR (as read), vertically centred on it.
-  // Uses the bigger font when it fits the space left before the tail.
+  // "TAG - n" just left of the QR, vertically centred on it. Uses the bigger
+  // font when it fits between the fold and the QR.
   const tagText = (qrX) => {
     if (!tagNo) return '';
     const s = `TAG - ${tagNo}`;
-    const x = qrX - 8;                                  // as-read left edge of the text
-    const room = x - S_TAG_MIN_X;
+    const end = qrX - 8;                                // text must end here
+    const room = end - S_TAG_MIN_X;
     const font = s.length * FONT_W['2'] <= room ? '2' : '1';
     const h = font === '2' ? 20 : 12;
-    return `TEXT ${x},${S_QR_MID_Y + h / 2},"${font}",180,1,1,"${fit(s, font, room)}"\n`;
+    const t = fit(s, font, room);
+    return `TEXT ${end - t.length * FONT_W[font]},${S_QR_MID_Y - h / 2},"${font}",0,1,1,"${t}"\n`;
   };
 
   // Preferred: render the extension-supplied QR matrix as a bitmap — small
@@ -259,11 +260,8 @@ function buildTSPLSmall(p) {
   if (Array.isArray(p.qr_rows) && p.qr_rows.length) {
     const n = p.qr_rows.length;
     const scale = Math.max(2, Math.min(3, Math.floor(S_QR_MAX_H / n)));
-    // Rotate the QR 180° like the text, so it looks upright (finder squares
-    // top-left, top-right, bottom-left) when the tag is read body-left.
-    const rot = p.qr_rows.slice().reverse().map(r => r.split('').reverse().join(''));
-    const bmp = qrBitmap(rot, scale);
-    const qx = S_QR_LEFT - bmp.widthPx;                 // QR spans qx..S_QR_LEFT
+    const bmp = qrBitmap(p.qr_rows, scale);             // unrotated = upright as read
+    const qx = S_QR_RIGHT - bmp.widthPx;                // QR spans qx..S_QR_RIGHT
     const qy = Math.max(2, Math.round(S_QR_MID_Y - bmp.height / 2));
     return Buffer.concat([
       Buffer.from(header + tagText(qx), 'latin1'),
@@ -273,7 +271,7 @@ function buildTSPLSmall(p) {
     ]);
   }
   // Fallback: let the printer generate the QR (cell size 2 keeps it small).
-  const fqx = S_QR_LEFT - 70;
+  const fqx = S_QR_RIGHT - 70;
   return Buffer.from(header + tagText(fqx) +
     `QRCODE ${fqx},${S_QR_MID_Y - 30},M,2,A,0,"${url}"\n` + 'PRINT 1,1\n', 'latin1');
 }
