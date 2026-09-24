@@ -424,10 +424,24 @@ function sendToPrinter(tspl) {
   });
 }
 
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`Hallmark Tag Bridge running on http://localhost:${PORT}  (printer: ${PRINTER_NAME})`);
+const server = app.listen(PORT, '127.0.0.1', () => {
+  console.log(`Hallmark Tag Bridge running on http://localhost:${PORT}  (printer: ${PRINTER_NAME}, tag: ${TAG_SIZE})`);
   if (MOCK_MODE) {
     console.log(`*** TEST MODE — no printer needed. TSPL saved to: ${JOBS_DIR} ***`);
   }
   console.log('Keep this window open.');
+});
+// Port already taken = another bridge (often an older copy, or one started
+// from Windows Startup) is still running. Say so plainly instead of a stack trace.
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') {
+    console.error(`\n*** Port ${PORT} is already in use — another Hallmark Tag Bridge is already running. ***`);
+    console.error(`Check it at http://localhost:${PORT}/health`);
+    console.error('To stop it: open Command Prompt and run   taskkill /F /IM node.exe');
+    console.error('Also remove any old start.bat shortcut from the Startup folder (Win+R -> shell:startup).');
+    console.error('Then run start.bat again.\n');
+  } else {
+    console.error('[Bridge] could not start:', e.message);
+  }
+  process.exit(1);
 });
