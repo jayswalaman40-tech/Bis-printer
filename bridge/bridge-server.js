@@ -259,7 +259,10 @@ function buildTSPLSmall(p) {
   if (Array.isArray(p.qr_rows) && p.qr_rows.length) {
     const n = p.qr_rows.length;
     const scale = Math.max(2, Math.min(3, Math.floor(S_QR_MAX_H / n)));
-    const bmp = qrBitmap(p.qr_rows, scale);
+    // Rotate the QR 180° like the text, so it looks upright (finder squares
+    // top-left, top-right, bottom-left) when the tag is read body-left.
+    const rot = p.qr_rows.slice().reverse().map(r => r.split('').reverse().join(''));
+    const bmp = qrBitmap(rot, scale);
     const qx = S_QR_LEFT - bmp.widthPx;                 // QR spans qx..S_QR_LEFT
     const qy = Math.max(2, Math.round(S_QR_MID_Y - bmp.height / 2));
     return Buffer.concat([
