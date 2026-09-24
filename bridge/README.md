@@ -60,6 +60,12 @@ Use this to demo and verify end-to-end before a printer is available.
 > tags print without changing the layout code. Only the printer name and the
 > label `GAP` calibration are printer-specific.
 
+## If printing says "Access is denied"
+The bridge first sends each tag to the shared printer (`\\localhost\<share>`).
+If Windows refuses that share, it automatically switches to **`rawprint.ps1`**,
+which hands the tag to the Windows print spooler by printer name (no share
+permission needed). Keep `rawprint.ps1` in the bridge folder.
+
 ## Health check
 Open `http://localhost:7072/health` →
 `{"ok":true,"printer":"TVSELP46","mock":true|false}` (the `printer` value is

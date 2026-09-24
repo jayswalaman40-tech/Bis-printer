@@ -409,17 +409,49 @@ function qrBitmap(rows, scale) {
   return { data, widthBytes, height, widthPx };
 }
 
+// Two ways to reach the printer:
+//  1) "copy /b <file> \\localhost\<share>" — needs the printer shared and the
+//     share writable; on some PCs Windows answers "Access is denied".
+//  2) rawprint.ps1 — hands the bytes to the Windows print spooler as a RAW job
+//     by printer name (no share, no network permission involved).
+// We try 1 first; once it fails we remember that and go straight to 2.
+let useSpooler = false;
+function copyToShare(tmp) {
+  return new Promise((resolve, reject) => {
+    exec(`copy /b "${tmp}" "\\\\localhost\\${PRINTER_NAME}"`, { shell: 'cmd.exe' }, (err, so, se) => {
+      if (err) return reject(new Error(((se || '') + ' ' + (so || '')).trim() || err.message));
+      resolve(true);
+    });
+  });
+}
+function spoolRaw(tmp) {
+  return new Promise((resolve, reject) => {
+    const ps1 = path.join(__dirname, 'rawprint.ps1');
+    const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${ps1}" -Printer "${PRINTER_NAME}" -Path "${tmp}"`;
+    exec(cmd, { timeout: 30000 }, (err, so, se) => {
+      if (err) return reject(new Error(((se || '') + ' ' + (so || '')).trim() || err.message));
+      resolve(true);
+    });
+  });
+}
 function sendToPrinter(tspl) {
   return new Promise((resolve, reject) => {
-    const tmp = path.join(os.tmpdir(), `tag_${Date.now()}.tspl`);
+    const tmp = path.join(os.tmpdir(), `tag_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.tspl`);
     // tspl may be a Buffer (contains binary BITMAP data) — write raw bytes.
-    fs.writeFile(tmp, tspl, (werr) => {
+    fs.writeFile(tmp, tspl, async (werr) => {
       if (werr) return reject(new Error('temp write failed: ' + werr.message));
-      exec(`copy /b "${tmp}" "\\\\localhost\\${PRINTER_NAME}"`, { shell:'cmd.exe' }, (err, so, se) => {
-        fs.unlink(tmp, () => {});
-        if (err) return reject(new Error(`printer error: ${err.message}\n${se}`));
-        resolve(true);
-      });
+      const done = (e) => { fs.unlink(tmp, () => {}); e ? reject(e) : resolve(true); };
+      if (!useSpooler) {
+        try { await copyToShare(tmp); return done(); }
+        catch (e1) {
+          console.warn(`[Bridge] share print failed (${e1.message.replace(/\s+/g, ' ')}) — using the Windows print spooler instead.`);
+          useSpooler = true;
+          try { await spoolRaw(tmp); return done(); }
+          catch (e2) { useSpooler = false; return done(new Error(`printer error — share: ${e1.message} | spooler: ${e2.message}`)); }
+        }
+      }
+      try { await spoolRaw(tmp); done(); }
+      catch (e) { done(new Error('printer error (spooler): ' + e.message)); }
     });
   });
 }
