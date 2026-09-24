@@ -120,3 +120,10 @@ tr.htp-blk td{ background:#FFF7F2!important; opacity:.72; }
 /* jobcard sync progress bar */
 .hdimg-progress{ height:6px; background:#24344E; border-radius:100px; overflow:hidden; margin:2px 0 12px; }
 .hdimg-progress i{ display:block; height:100%; width:0; background:linear-gradient(90deg,#C6A15B,#37C083); transition:width .2s; }
+/* From/To tag range filter in the template modal */
+.htp-range{ display:flex; flex-wrap:wrap; align-items:center; gap:10px 18px; margin:2px 0 6px; font:600 13px 'IBM Plex Sans',sans-serif; color:#1B2430; }
+.htp-range label{ display:flex; align-items:center; gap:8px; }
+.htp-range input{ width:84px; padding:7px 9px; font:600 13px 'IBM Plex Sans',sans-serif; border:1px solid #C4CBBE; border-radius:3px; background:#fff; color:#1B2430; }
+.htp-range input:focus{ outline:2px solid #1B2430; outline-offset:1px; }
+#htpRangeInfo{ font-weight:500; color:#5A6472; }
+.htp-print:disabled{ opacity:.45; cursor:not-allowed; }

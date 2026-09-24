@@ -132,21 +132,22 @@ const QR_DENSITY = 5;          // was 6 — a touch lighter to reduce module ble
 const QR_SPEED   = 3;          // was 4 — slightly slower for cleaner edges
 
 /* ---- SMALL TAG: 82 x 12 mm (printable 81 x 12) @203dpi = 8 dots/mm ----
-   Canvas 656 x 96 dots. Printer X=0 is at the TIP of the thin tail:
-     X   0..~250  : thin tail (only 2-3 mm tall) — print NOTHING here
-     X ~250..~470 : body, text panel — the chosen design (d1..d5)
-     X ~480..656  : body, QR panel
-   The text panel is drawn rotated 180° so it reads upright with the body on
-   the left and the tail on the right. Designs are laid out in "tag space":
-   u = dots from the panel's left edge (as read), v = dots from its top edge.
-   S_X0 / S_TOP map tag space to printer dots (X = S_X0 - u, y = S_TOP - v).
-   Tune these after a test print if the design sits off the tag. */
-const S_X0        = 422;   // printer X of the design's left edge (as read) — moved 44 dots toward the tail so the box clears the fold
+   Canvas 656 x 96 dots. Printer X=0 is at the TIP of the thin tail. Read with
+   the body on the left and the tail on the right, the tag is laid out as:
+     X 452..636 : body end        — the chosen design box (d1..d5)
+     X ~441     : fold line (nothing printed across it)
+     X 232..433 : between fold and tail — QR, then "TAG - n" beside it
+     X   0..~225: thin tail (2-3 mm tall) — print NOTHING here
+   Everything is drawn rotated 180° so it reads upright in that orientation.
+   Designs are laid out in "tag space": u = dots from the box's left edge (as
+   read), v = dots from its top edge; X = S_X0 - u, y = S_TOP - v.
+   Tune the constants below after a test print if something sits off the tag. */
+const S_X0        = 636;   // printer X of the design box's left edge (as read)
 const S_TOP       = 94;    // printer y of the design's top edge (as read)
-const S_W         = 190;   // design width  (dots, ~24 mm)
+const S_W         = 184;   // design width  (dots, 23 mm) — ends at X 452, clear of the fold
 const S_H         = 80;    // design height (dots, 10 mm)
-const S_QR_RIGHT  = 640;   // QR right edge X (toward the body end)
-const S_QR_MIN_X  = 480;   // QR never starts inside the text panel
+const S_QR_LEFT   = 433;   // QR's left edge as read (printer X, just after the fold)
+const S_TAIL_X    = 232;   // nothing is printed below this X (start of the tail)
 const S_QR_MAX_H  = 66;    // max QR size (~8 mm) so it never reaches the tag edge
 const S_QR_MID_Y  = 53;    // QR vertical centre, level with the design's centre
 const S_GAP_MM    = 3;     // gap between tags on the roll (measured ~3 mm)
@@ -232,10 +233,26 @@ function buildTSPLSmall(p) {
     centre: clean(CENTRE_NAME || p.ahc_name).toUpperCase(),
   };
   const url = p.detail_url || `HD-${f.huid}`;
+  // Tag number: sent by the extension; older extensions only send the serial
+  // (SNxxxx-0005), so fall back to its number part without leading zeros.
+  const tagNo = clean(p.tag_no) ||
+    (clean(p.serial).split('-').pop() || '').replace(/^0+(?=\d)/, '');
 
   const header =
     `SIZE 82 mm, 12 mm\nGAP ${S_GAP_MM} mm, 0 mm\nSPEED ${QR_SPEED}\nDENSITY ${QR_DENSITY}\n` +
     `DIRECTION 0\nREFERENCE 0,0\nCLS\n${smallDesign(p.template_detail, f)}`;
+
+  // "TAG - n" to the right of the QR (as read), vertically centred on it.
+  // Uses the bigger font when it fits the space left before the tail.
+  const tagText = (qrX) => {
+    if (!tagNo) return '';
+    const s = `TAG - ${tagNo}`;
+    const x = qrX - 8;                                  // as-read left edge of the text
+    const room = x - S_TAIL_X;
+    const font = s.length * FONT_W['2'] <= room ? '2' : '1';
+    const h = font === '2' ? 20 : 12;
+    return `TEXT ${x},${S_QR_MID_Y + h / 2},"${font}",180,1,1,"${fit(s, font, room)}"\n`;
+  };
 
   // Preferred: render the extension-supplied QR matrix as a bitmap — small
   // (2-3 dots per module, at most ~8 mm) and centred on the design's height.
@@ -243,17 +260,19 @@ function buildTSPLSmall(p) {
     const n = p.qr_rows.length;
     const scale = Math.max(2, Math.min(3, Math.floor(S_QR_MAX_H / n)));
     const bmp = qrBitmap(p.qr_rows, scale);
-    const qx = Math.max(S_QR_MIN_X, S_QR_RIGHT - bmp.widthPx);
+    const qx = S_QR_LEFT - bmp.widthPx;                 // QR spans qx..S_QR_LEFT
     const qy = Math.max(2, Math.round(S_QR_MID_Y - bmp.height / 2));
     return Buffer.concat([
-      Buffer.from(header, 'latin1'),
+      Buffer.from(header + tagText(qx), 'latin1'),
       Buffer.from(`BITMAP ${qx},${qy},${bmp.widthBytes},${bmp.height},0,`, 'latin1'),
       bmp.data,
       Buffer.from('\nPRINT 1,1\n', 'latin1'),
     ]);
   }
   // Fallback: let the printer generate the QR (cell size 2 keeps it small).
-  return Buffer.from(header + `QRCODE ${S_QR_MIN_X + 40},${S_QR_MID_Y - 30},M,2,A,0,"${url}"\n` + 'PRINT 1,1\n', 'latin1');
+  const fqx = S_QR_LEFT - 70;
+  return Buffer.from(header + tagText(fqx) +
+    `QRCODE ${fqx},${S_QR_MID_Y - 30},M,2,A,0,"${url}"\n` + 'PRINT 1,1\n', 'latin1');
 }
 
 function buildTSPL(p) {

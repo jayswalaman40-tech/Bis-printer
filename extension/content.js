@@ -131,6 +131,7 @@
       huid: tag.huid, weight: tag.weight, purity: purityCode,
       article: tag.article,
       serial, barcode: `HD-${tag.huid}`,
+      tag_no: tag.tag_id,                   // AHC tag number, printed as "TAG - n"
       ahc_name: TAG_CONFIG.AHC_NAME,
       template_detail: templateDetail,      // 'd1'..'d5'
       detail_url: url,
@@ -327,8 +328,14 @@
       const t = printable[0] || data.tags[0] || {};
       return { huid: t.huid || '------', wt: t.weight || '0.000',
         article: t.article || '', pur: PURITY_LABEL[selPurity], purCode: selPurity,
-        serial: serialFor(data.jobcardNo, t.tag_id) };
+        serial: serialFor(data.jobcardNo, t.tag_id), tagNo: t.tag_id || '—' };
     })();
+
+    // Tag numbers (the portal's AHC Tag column) used by the From/To filter.
+    const tagNum = (t) => { const n = parseInt(t.tag_id, 10); return isNaN(n) ? t.position : n; };
+    const nums = printable.map(tagNum);
+    const firstNo = nums.length ? Math.min(...nums) : 1;
+    const lastNo  = nums.length ? Math.max(...nums) : 1;
 
     const overlay = document.createElement('div');
     overlay.className = 'htp-modal';
@@ -346,7 +353,13 @@
           <div class="htp-cards htp-cards-3" id="htpDetailCards"></div>
           <p class="htp-sec">Live preview</p>
           <div class="htp-final" id="htpFinal"></div>
-          <p class="htp-sec">Tags to print (${printable.length}) — real QR, exactly what will print</p>
+          <p class="htp-sec">Print only a range of tags (leave blank to print all)</p>
+          <div class="htp-range">
+            <label>From tag <input type="number" min="1" id="htpFrom" placeholder="${firstNo}"></label>
+            <label>To tag <input type="number" min="1" id="htpTo" placeholder="${lastNo}"></label>
+            <span id="htpRangeInfo"></span>
+          </div>
+          <p class="htp-sec" id="htpListHead">Tags to print (${printable.length}) — real QR, exactly what will print</p>
           <div class="htp-qrlist" id="htpQrList"><div class="htp-qrloading">Generating QR codes…</div></div>
         </div>
         <div class="htp-modal-foot">
@@ -393,23 +406,41 @@
             <div class="htp-qrbox">${qrSvg}</div>
             <div class="htp-qrside">
               <div class="htp-ctr">${ctr}</div>
+              <div class="htp-serlabel">TAG - ${sample.tagNo}</div>
               <div class="htp-serlabel">Serial No.</div>
               <div class="serial">${sample.serial}</div>
             </div>
           </div>
         </div>`;
     }
+    // Tags inside the From/To range (blank = open-ended on that side).
+    function selected() {
+      const fv = parseInt(overlay.querySelector('#htpFrom').value, 10);
+      const tv = parseInt(overlay.querySelector('#htpTo').value, 10);
+      const lo = isNaN(fv) ? -Infinity : fv, hi = isNaN(tv) ? Infinity : tv;
+      return payloads.filter(({ tag }) => { const n = tagNum(tag); return n >= lo && n <= hi; });
+    }
     function paintList() {
       const list = overlay.querySelector('#htpQrList');
+      const sel = selected();
+      const info = overlay.querySelector('#htpRangeInfo');
+      const btn = overlay.querySelector('.htp-print');
+      const all = sel.length === payloads.length;
+      info.textContent = all ? `All ${payloads.length} tags` : `${sel.length} of ${payloads.length} tags selected`;
+      overlay.querySelector('#htpListHead').textContent =
+        `Tags to print (${sel.length}) — real QR, exactly what will print`;
+      btn.textContent = all ? `Print All Tags (${sel.length})` : `Print ${sel.length} Tag${sel.length === 1 ? '' : 's'}`;
+      btn.disabled = !sel.length;
       if (!payloads.length) { list.innerHTML = '<div class="htp-qrloading">No tags ready to print.</div>'; return; }
-      list.innerHTML = payloads.map(({ tag, pl }) => `
+      if (!sel.length) { list.innerHTML = '<div class="htp-qrloading">No tags in this range.</div>'; return; }
+      list.innerHTML = sel.map(({ tag, pl }) => `
         <div class="htp-qrrow">
           <img class="htp-qrphoto miss" data-src="${IMG_BASE}/${encodeURIComponent(pl.huid)}/article" alt="" title="Synced article photo">
           <div class="htp-qrimg">${qrRealSVG(pl.qr_rows, 64)}</div>
           <div class="htp-qrinfo">
             <div class="htp-qrhuid">${pl.huid}</div>
             <div class="htp-qrmeta">${(tag.article||'—')} · Wt ${wt3(tag.weight)}g · ${PURITY_LABEL[selPurity]||selPurity}</div>
-            <div class="htp-qrserial">${pl.serial}</div>
+            <div class="htp-qrserial">Tag ${tag.tag_id} · ${pl.serial}</div>
           </div>
         </div>`).join('');
       // Attach load/error handlers in the isolated world (page CSP may block
@@ -421,20 +452,25 @@
       });
     }
     paintCards(); paintFinal(); paintList();
+    overlay.querySelector('#htpFrom').addEventListener('input', paintList);
+    overlay.querySelector('#htpTo').addEventListener('input', paintList);
 
     const close = () => overlay.remove();
     overlay.querySelector('.htp-modal-x').onclick = close;
     overlay.querySelector('.htp-cancel').onclick = close;
     overlay.querySelector('.htp-print').onclick = async () => {
+      const ids = new Set(selected().map(({ tag }) => tag.tag_id));
+      if (!ids.size) return;
       close();
-      await printAll();
+      await printAll(ids);
     };
   }
 
   // ---- print loop ----
-  async function printAll() {
+  // onlyIds: optional Set of tag_ids (From/To range); omitted = every tag.
+  async function printAll(onlyIds) {
     const { data } = refresh();
-    const printable = data.tags.filter(t => t.canPrint);
+    const printable = data.tags.filter(t => t.canPrint && (!onlyIds || onlyIds.has(t.tag_id)));
     if (!printable.length) { statusEl.textContent = 'Nothing to print.'; return; }
 
     // Don't pretend to print when the local bridge isn't reachable.
