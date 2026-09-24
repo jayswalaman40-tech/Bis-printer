@@ -46,8 +46,34 @@ async function huidExists(huid) {
   }
 }
 
+// ---- Print bridge (localhost:7072) ----
+// Called from the content script. The extension has host permission for the
+// bridge, so neither the page's CORS nor Chrome's local-network block applies.
+async function bridgeHealth() {
+  try {
+    const r = await fetch(`${TAG_CONFIG.BRIDGE_URL}/health`, { cache: 'no-store', signal: AbortSignal.timeout(2000) });
+    return { ok: r.ok };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
+}
+async function bridgePrint(payload) {
+  try {
+    const r = await fetch(`${TAG_CONFIG.BRIDGE_URL}/print-tag`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    });
+    const text = await r.text();
+    if (!r.ok) return { ok: false, error: text.slice(0, 300) || `HTTP ${r.status}` };
+    try { return JSON.parse(text); } catch { return { ok: true }; }
+  } catch (e) {
+    return { ok: false, error: 'bridge not reachable — is start.bat running? (' + String(e && e.message || e) + ')' };
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return;
+  if (msg.type === 'bridge-health') { bridgeHealth().then(sendResponse); return true; }
+  if (msg.type === 'bridge-print')  { bridgePrint(msg.payload).then(sendResponse); return true; }
   if (msg.type === 'hd-upload') {
     uploadImage(msg.path, msg.dataUrl).then(sendResponse)
       .catch(e => sendResponse({ ok: false, error: String(e && e.message || e) }));

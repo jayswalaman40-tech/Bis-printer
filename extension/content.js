@@ -140,18 +140,27 @@
   }
 
   // ---- bridge calls ----
+  // Sent through the extension's background worker, not fetched from the BIS
+  // page: Chrome blocks (or asks permission for) a public website talking to
+  // localhost, but the extension itself has host permission for the bridge.
+  function bg(msg) {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(msg, (r) => {
+          if (chrome.runtime.lastError) return resolve({ ok: false, error: chrome.runtime.lastError.message });
+          resolve(r || { ok: false, error: 'no response from extension' });
+        });
+      } catch (e) { resolve({ ok: false, error: String(e && e.message || e) }); }
+    });
+  }
   async function bridgeAlive() {
-    try {
-      const r = await fetch(`${TAG_CONFIG.BRIDGE_URL}/health`, { method:'GET', signal: AbortSignal.timeout(2000) });
-      return r.ok;
-    } catch { return false; }
+    const r = await bg({ type: 'bridge-health' });
+    return !!(r && r.ok);
   }
   async function sendPrint(payload) {
-    const r = await fetch(`${TAG_CONFIG.BRIDGE_URL}/print-tag`, {
-      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
-    });
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
+    const r = await bg({ type: 'bridge-print', payload });
+    if (!r || !r.ok) throw new Error((r && r.error) || 'print failed');
+    return r;
   }
 
   // ---- state ----
@@ -519,7 +528,11 @@
 
   // ---- init ----
   (async function init() {
-    if (!(await bridgeAlive())) { warnEl.style.display = 'block'; }
+    // Show the "bridge not running" warning only while the bridge is really
+    // down, and clear it by itself once start.bat is running (no reload needed).
+    const checkBridge = async () => { warnEl.style.display = (await bridgeAlive()) ? 'none' : 'block'; };
+    await checkBridge();
+    setInterval(checkBridge, 5000);
     const data = scrape();
     if (!data.jobcardNo) { statusEl.textContent = 'No jobcard found on this page'; return; }
     panel.querySelector('.htp-title').textContent = `Tag Printer — ${data.jobcardNo}`;
