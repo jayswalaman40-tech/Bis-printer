@@ -20,6 +20,15 @@ you do not touch `bridge-server.js`.
 Priority order if you prefer: `--printer "name"` argument → `HALLMARK_PRINTER`
 environment variable → `printer.txt` → built-in default (`TVSELP46`).
 
+## Tag size and centre name (no code editing)
+- **`tag.txt`** — `small` = 82 x 12 mm jewellery tag (tail on the left, design
+  box next to the tail, then "TAG - n" and the QR at the body end);
+  `large` = the original 100 x 18 mm tag.
+- **`centre.txt`** — centre name printed on the tag instead of the name from the
+  BIS portal (e.g. `RADHE HALLMARKING`). Delete it to use the portal name.
+
+Restart the bridge after changing any of these files.
+
 ## Run — two modes
 
 ### A) TEST MODE (no printer needed) — for trying the full flow
