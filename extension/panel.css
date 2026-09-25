@@ -127,3 +127,6 @@ tr.htp-blk td{ background:#FFF7F2!important; opacity:.72; }
 .htp-range input:focus{ outline:2px solid #1B2430; outline-offset:1px; }
 #htpRangeInfo{ font-weight:500; color:#5A6472; }
 .htp-print:disabled{ opacity:.45; cursor:not-allowed; }
+/* Silver extension: silver accents so its panel is told apart from Gold's */
+.htp-panel.htp-silver{ border-color:#AEB6C2; }
+.htp-panel.htp-silver .htp-dot{ background:#9AA3AF; }

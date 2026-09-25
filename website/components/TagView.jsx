@@ -1,14 +1,25 @@
 import Head from 'next/head';
 import { useEffect, useState } from 'react';
 
+const GOLD   = { metal: 'Gold',   std: 'IS\u00a01417' };
+const SILVER = { metal: 'Silver', std: 'IS\u00a02112' };
+// Gold codes are the plain fineness; silver codes carry an "S" prefix (S925)
+// so silver 999 is never shown as 24K gold. Must match extension/content.js.
 const PURITY = {
-  '999': { karat: '24K', fine: '99.9', label: '24 Karat' },
-  '958': { karat: '23K', fine: '95.8', label: '23 Karat' },
-  '916': { karat: '22K', fine: '91.6', label: '22 Karat' },
-  '833': { karat: '20K', fine: '83.3', label: '20 Karat' },
-  '750': { karat: '18K', fine: '75.0', label: '18 Karat' },
-  '585': { karat: '14K', fine: '58.5', label: '14 Karat' },
-  '375': { karat: '9K',  fine: '37.5', label: '9 Karat'  },
+  '999': { ...GOLD, karat: '24K', fine: '99.9', label: '24 Karat' },
+  '958': { ...GOLD, karat: '23K', fine: '95.8', label: '23 Karat' },
+  '916': { ...GOLD, karat: '22K', fine: '91.6', label: '22 Karat' },
+  '833': { ...GOLD, karat: '20K', fine: '83.3', label: '20 Karat' },
+  '750': { ...GOLD, karat: '18K', fine: '75.0', label: '18 Karat' },
+  '585': { ...GOLD, karat: '14K', fine: '58.5', label: '14 Karat' },
+  '375': { ...GOLD, karat: '9K',  fine: '37.5', label: '9 Karat'  },
+  'S999': { ...SILVER, karat: '999', fine: '99.9', label: 'Fine Silver' },
+  'S990': { ...SILVER, karat: '990', fine: '99.0', label: 'Silver 990' },
+  'S970': { ...SILVER, karat: '970', fine: '97.0', label: 'Silver 970' },
+  'S925': { ...SILVER, karat: '925', fine: '92.5', label: 'Sterling Silver' },
+  'S900': { ...SILVER, karat: '900', fine: '90.0', label: 'Silver 900' },
+  'S835': { ...SILVER, karat: '835', fine: '83.5', label: 'Silver 835' },
+  'S800': { ...SILVER, karat: '800', fine: '80.0', label: 'Silver 800' },
 };
 
 // Tamper protection: must match SIGN_SECRET in extension/config.js.
@@ -160,7 +171,8 @@ export default function TagView({ q = {}, isReady = true }) {
       .err-card{max-width:360px;text-align:center;color:#9AA9BF;} h1{font:600 22px 'Cormorant Garamond',serif;color:#F4F6FA;margin-bottom:10px;} p{font-size:14px;line-height:1.6;}
     `}</style></main></>);
 
-  const p = PURITY[data.purity] || { karat: '', fine: '', label: data.purity };
+  const p = PURITY[data.purity] || { ...GOLD, karat: '', fine: '', label: data.purity };
+  const silver = p.metal === 'Silver';
   const weight = fmtWeight(data.weight);
   const verifiedOn = today();
 
@@ -210,7 +222,7 @@ export default function TagView({ q = {}, isReady = true }) {
         <div className="cell">
           <span className="c-k">Fineness</span>
           <span className="c-v">{p.fine ? p.fine : '—'}<em>%</em></span>
-          <span className="c-s">Gold content</span>
+          <span className="c-s">{p.metal} content</span>
         </div>
         <div className="cell">
           <span className="c-k">Weight</span>
@@ -219,8 +231,8 @@ export default function TagView({ q = {}, isReady = true }) {
         </div>
         <div className="cell">
           <span className="c-k">Standard</span>
-          <span className="c-v sm">IS&nbsp;1417</span>
-          <span className="c-s">Gold fineness</span>
+          <span className="c-v sm">{p.std}</span>
+          <span className="c-s">{p.metal} fineness</span>
         </div>
       </section>
 
@@ -239,7 +251,7 @@ export default function TagView({ q = {}, isReady = true }) {
             <span className="mark-s">Bureau standard</span>
           </div>
           <div className="mark">
-            <div className="mark-ico gold-chip">{p.karat || '22K'}</div>
+            <div className={`mark-ico ${silver ? 'silver-chip' : 'gold-chip'}`}>{p.karat || '22K'}</div>
             <span className="mark-k">Purity</span>
             <span className="mark-s">{p.fine || '91.6'}% fine</span>
           </div>
@@ -333,6 +345,7 @@ export default function TagView({ q = {}, isReady = true }) {
       .mark{background:#fff;border:1px solid #EAE4D6;border-radius:14px;padding:16px 8px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px;}
       .mark-ico{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:#FBF7EE;border:1px solid #EEE4CE;}
       .mark-ico.gold-chip{font:700 15px 'JetBrains Mono';color:#8A6A2A;background:linear-gradient(135deg,#F6E7C2,#E9D097);border-color:#E0C58C;}
+      .mark-ico.silver-chip{font:700 15px 'JetBrains Mono';color:#4B5563;background:linear-gradient(135deg,#F3F4F6,#D1D5DB);border-color:#C4C9D1;}
       .mark-ico.mono{font:700 12px 'JetBrains Mono';color:#16233B;letter-spacing:.04em;}
       .mark-k{font:600 12px 'Inter';color:#16233B;}
       .mark-s{font-size:10px;color:#9AA1AD;line-height:1.3;word-break:break-all;padding:0 2px;}

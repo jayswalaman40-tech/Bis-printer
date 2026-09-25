@@ -9,6 +9,8 @@
    Once synced, images stay on the server permanently (no unsync).
    ================================================================ */
 (function () {
+  // Gold and Silver extensions can both be on; only one image-sync panel.
+  if (document.querySelector('.hdimg-panel')) return;
   const b64 = (v) => { try { return decodeURIComponent(escape(atob((v || '').trim()))); } catch { try { return atob((v || '').trim()); } catch { return (v || '').trim(); } } };
 
   // ---- shared helpers ----

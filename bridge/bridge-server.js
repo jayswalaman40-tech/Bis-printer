@@ -229,7 +229,7 @@ function buildTSPLSmall(p) {
     huid:   clean(p.huid),
     art:    clean(p.article).toUpperCase(),
     wt:     w3 ? `${w3}g` : '',
-    pur:    clean(p.purity),                            // purity code, as in the templates
+    pur:    /^S\d+$/.test(clean(p.purity)) ? `${clean(p.purity).slice(1)} SILVER` : clean(p.purity),  // 916 / 925 SILVER
     centre: clean(CENTRE_NAME || p.ahc_name).toUpperCase(),
   };
   const url = p.detail_url || `HD-${f.huid}`;
@@ -278,7 +278,9 @@ function buildTSPLSmall(p) {
 
 function buildTSPL(p) {
   if (TAG_SIZE === 'small') return buildTSPLSmall(p);
-  const purMap = { '999':'999 24K','958':'958 23K','916':'916 22K','833':'833 20K','750':'750 18K','585':'585 14K','375':'375 9K' };
+  const purMap = { '999':'999 24K','958':'958 23K','916':'916 22K','833':'833 20K','750':'750 18K','585':'585 14K','375':'375 9K',
+    // Silver codes arrive as S<fineness> (S925) so silver 999 is never taken for 24K gold.
+    'S999':'999 SILVER','S990':'990 SILVER','S970':'970 SILVER','S925':'925 SILVER','S900':'900 SILVER','S835':'835 SILVER','S800':'800 SILVER' };
   const clean  = (v) => ((v == null ? '' : '' + v).replace(/"/g, '').trim());
   const purity = purMap[p.purity] || clean(p.purity);
   const huid   = clean(p.huid);
@@ -298,6 +300,10 @@ function buildTSPL(p) {
   // leaving a white gap before the QR at BC_X.
   const L  = DET_X;            // details left edge (304)
   const RP = L + 150;          // purity column
+  const DET_MAX0 = BC_X - 20;
+  // A long purity ("925 SILVER") is pulled left so it never reaches the QR's
+  // quiet zone, assuming up to 10 dots per character; gold stays at RP.
+  const purX = Math.min(RP, DET_MAX0 - purity.length * 10);
   const DET_MAX = BC_X - 20;   // details must end before here (quiet zone)
   const LW = DET_MAX - L;      // width available for a left-side underline
   const QX = BC_X;             // QR left edge (560)  — clean band, no borders
@@ -336,7 +342,7 @@ function buildTSPL(p) {
       `TEXT ${L},8,"1",0,1,1,"HUID"\n` +
       `TEXT ${L},22,"3",0,1,1,"${huid}"\n` +
       `TEXT ${L},60,"1",0,1,1,"${article}"\n` +
-      `TEXT ${L},84,"1",0,1,1,"Wt ${wtg}"\n` + `TEXT ${RP},84,"1",0,1,1,"${purity}"\n`;
+      `TEXT ${L},84,"1",0,1,1,"Wt ${wtg}"\n` + `TEXT ${purX},84,"1",0,1,1,"${purity}"\n`;
   }
 
   // RIGHT column — sits to the right of the QR: centre name (wrapped) on top,

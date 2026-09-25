@@ -9,6 +9,9 @@ const TAG_CONFIG = {
   DETAIL_BASE: 'https://jhcv-five.vercel.app/t',
   AHC_NAME:    'Jaliyan Hallmarking Center',   // per-customer
   AHC_CODE:    'SHC001',                        // per-customer
+  // Which metal this extension prints: 'Gold' or 'Silver' (anything else, or
+  // blank, offers both). Install one Gold and one Silver copy if needed.
+  METAL:       '',
 
   // Tamper protection: each tag URL is signed with this secret and the
   // verification page re-checks it, so an edited URL shows "Invalid tag".

@@ -24,16 +24,33 @@
   const ENTRY_TABLE = 'tabWeight';
 
   // ---- constants ----
+  // Gold codes are the plain fineness (916 …). Silver codes carry an "S"
+  // prefix (S925 …) so a silver 999 is never read as 24K gold — the code goes
+  // into the signed QR URL, and the bridge and website decode it the same way.
   const PURITY_OPTIONS = [
-    { code: '999', label: '24K · 999' },
-    { code: '958', label: '23K · 958' },
-    { code: '916', label: '22K · 916' },
-    { code: '833', label: '20K · 833' },
-    { code: '750', label: '18K · 750' },
-    { code: '585', label: '14K · 585' },
-    { code: '375', label: '9K · 375'  },
+    { code: '999', label: '24K · 999', metal: 'Gold' },
+    { code: '958', label: '23K · 958', metal: 'Gold' },
+    { code: '916', label: '22K · 916', metal: 'Gold' },
+    { code: '833', label: '20K · 833', metal: 'Gold' },
+    { code: '750', label: '18K · 750', metal: 'Gold' },
+    { code: '585', label: '14K · 585', metal: 'Gold' },
+    { code: '375', label: '9K · 375',  metal: 'Gold' },
+    { code: 'S999', label: 'Silver · 999', metal: 'Silver' },
+    { code: 'S990', label: 'Silver · 990', metal: 'Silver' },
+    { code: 'S970', label: 'Silver · 970', metal: 'Silver' },
+    { code: 'S925', label: 'Silver · 925 (Sterling)', metal: 'Silver' },
+    { code: 'S900', label: 'Silver · 900', metal: 'Silver' },
+    { code: 'S835', label: 'Silver · 835', metal: 'Silver' },
+    { code: 'S800', label: 'Silver · 800', metal: 'Silver' },
   ];
+  // One extension per metal: config.js METAL = 'Gold' or 'Silver' limits the
+  // purity list (anything else shows both). The full list above stays the
+  // reference for labels and the material check.
+  const METAL = ['Gold', 'Silver'].includes(TAG_CONFIG.METAL) ? TAG_CONFIG.METAL : '';
+  const METAL_OPTIONS = PURITY_OPTIONS.filter(o => !METAL || o.metal === METAL);
   const PURITY_LABEL = Object.fromEntries(PURITY_OPTIONS.map(o => [o.code, o.label]));
+  // What the purity looks like on the printed tag: "916" / "925 SILVER".
+  const purityShort = (code) => /^S\d+$/.test(code || '') ? `${code.slice(1)} SILVER` : (code || '');
 
   // Force a DataTables-driven table to show every row (default page size is
   // 10). We bump its "length" <select> to the largest option and fire a
@@ -169,11 +186,14 @@
 
   // ---- build panel ----
   const panel = document.createElement('div');
-  panel.className = 'htp-panel';
+  panel.className = 'htp-panel' + (METAL ? ' htp-' + METAL.toLowerCase() : '');
+  // If the other metal's extension already added its panel, sit to its left.
+  const others = document.querySelectorAll('.htp-panel').length;
+  if (others) panel.style.right = (18 + others * 574) + 'px';
   panel.innerHTML = `
     <div class="htp-head">
       <span class="htp-dot"></span>
-      <span class="htp-title">Tag Printer</span>
+      <span class="htp-title">Tag Printer${METAL ? ' · ' + METAL : ''}</span>
       <button class="htp-x" title="Hide">&times;</button>
     </div>
     <div class="htp-body">
@@ -184,7 +204,8 @@
         <label>Purity (whole jobcard):</label>
         <select class="htp-purity-sel">
           <option value="">— Select —</option>
-          ${PURITY_OPTIONS.map(o => `<option value="${o.code}">${o.label}</option>`).join('')}
+          ${(METAL ? [METAL] : ['Gold', 'Silver']).map(m => `<optgroup label="${m}">${METAL_OPTIONS.filter(o => o.metal === m)
+            .map(o => `<option value="${o.code}">${o.label}</option>`).join('')}</optgroup>`).join('')}
         </select>
       </div>
       <p class="htp-status">Loading…</p>
@@ -229,10 +250,19 @@
     statusEl.innerHTML = `${data.tags.length} tags · ${printable} ready`
       + (missing ? ` · ${missing} not ready (no HUID/weight)` : '');
     renderTable(data);
-    nextBtn.disabled = !(selPurity && printable > 0);
-    nextBtn.textContent = selPurity
-      ? `Choose template & print (${printable})`
-      : 'Select purity first';
+    // Guard: the portal's Material column says Gold/Silver — refuse a purity
+    // of the other metal so a silver jobcard can't get gold tags (or vice versa).
+    const selMetal = (PURITY_OPTIONS.find(o => o.code === selPurity) || {}).metal;
+    const mats = data.tags.map(t => (t.material || '').toLowerCase());
+    const wrongMetal = selMetal && mats.some(m => m.includes(selMetal === 'Gold' ? 'silver' : 'gold'));
+    if (wrongMetal) {
+      const other = selMetal === 'Gold' ? 'Silver' : 'Gold';
+      statusEl.innerHTML = `<span class="htp-miss">This jobcard's material is ${other}, but a ${selMetal} purity is selected. Choose a ${other} purity.</span>`;
+    }
+    nextBtn.disabled = !(selPurity && printable > 0) || !!wrongMetal;
+    nextBtn.textContent = !selPurity ? 'Select purity first'
+      : wrongMetal ? 'Purity does not match material'
+      : `Choose template & print (${printable})`;
     return { data, printable };
   }
 
@@ -336,7 +366,7 @@
     const sample = (() => {
       const t = printable[0] || data.tags[0] || {};
       return { huid: t.huid || '------', wt: t.weight || '0.000',
-        article: t.article || '', pur: PURITY_LABEL[selPurity], purCode: selPurity,
+        article: t.article || '', pur: PURITY_LABEL[selPurity], purCode: purityShort(selPurity),
         serial: serialFor(data.jobcardNo, t.tag_id), tagNo: t.tag_id || '—' };
     })();
 
@@ -538,7 +568,7 @@
     setInterval(checkBridge, 5000);
     const data = scrape();
     if (!data.jobcardNo) { statusEl.textContent = 'No jobcard found on this page'; return; }
-    panel.querySelector('.htp-title').textContent = `Tag Printer — ${data.jobcardNo}`;
+    panel.querySelector('.htp-title').textContent = `Tag Printer${METAL ? ' · ' + METAL : ''} — ${data.jobcardNo}`;
     watchTable();
     // Show every row (DataTables defaults to 10 per page) before scraping.
     expandTable(PRINT_TABLE);
