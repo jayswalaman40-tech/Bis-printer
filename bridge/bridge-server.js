@@ -430,6 +430,7 @@ function spoolRaw(tmp) {
     const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${ps1}" -Printer "${PRINTER_NAME}" -Path "${tmp}"`;
     exec(cmd, { timeout: 30000 }, (err, so, se) => {
       if (err) return reject(new Error(((se || '') + ' ' + (so || '')).trim() || err.message));
+      if (so && so.trim()) console.log('[Bridge] spooler: ' + so.trim());
       resolve(true);
     });
   });

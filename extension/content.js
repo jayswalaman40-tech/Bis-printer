@@ -490,12 +490,13 @@
     }
 
     nextBtn.disabled = true;
-    let ok = 0, fail = 0, lastErr = '';
+    let ok = 0, fail = 0, lastErr = '', mock = false;
     for (let i = 0; i < printable.length; i++) {
       const tag = printable[i];
       statusEl.textContent = `Printing ${i+1} / ${printable.length} — Tag #${tag.tag_id}`;
       try {
-        await sendPrint(await buildPayload(tag, data.jobcardNo, selPurity, selDetail));
+        const r = await sendPrint(await buildPayload(tag, data.jobcardNo, selPurity, selDetail));
+        if (r && r.mock) mock = true;
         ok++;
       } catch (e) {
         fail++; lastErr = (e && e.message) ? e.message : String(e);
@@ -503,9 +504,11 @@
       }
       await new Promise(r => setTimeout(r, 600));  // TSC TE244 breathing room
     }
-    statusEl.innerHTML = fail
-      ? `<span class="htp-miss">Printed ${ok}, failed ${fail}. ${lastErr ? '('+lastErr+')' : ''}</span>`
-      : `Done — ${ok} printed ✓`;
+    statusEl.innerHTML = mock
+      ? `<span class="htp-miss">TEST MODE — ${ok} tag(s) saved as files in the bridge's "jobs" folder, NOTHING was printed. Close the bridge window and start it with start.bat (not start-test.bat).</span>`
+      : fail
+        ? `<span class="htp-miss">Printed ${ok}, failed ${fail}. ${lastErr ? '('+lastErr+')' : ''}</span>`
+        : `Done — ${ok} printed ✓`;
     nextBtn.disabled = false;
   }
 

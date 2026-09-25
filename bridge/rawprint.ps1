@@ -10,10 +10,17 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # printer.txt holds the SHARE name; the spooler needs the printer NAME.
+$port = ''
 try {
   $p = Get-Printer -ErrorAction Stop | Where-Object { $_.Name -eq $Printer -or $_.ShareName -eq $Printer } | Select-Object -First 1
-  if ($p) { $Printer = $p.Name }
+  if ($p) { $Printer = $p.Name; $port = $p.PortName }
 } catch { }
+
+# A queue on FILE:/PORTPROMPT: (or a PDF/XPS/OneNote printer) saves a file
+# instead of printing. Stop with a clear fix rather than "printing" silently.
+if ($port -match '^(FILE:|PORTPROMPT:|nul:?)$' -or $Printer -match 'PDF|XPS|OneNote|Fax') {
+  throw "Printer '$Printer' saves to a file (port '$port') instead of printing. Fix: Control Panel > Devices and Printers > right-click '$Printer' > Printer properties > Ports tab > tick the USB port (e.g. USB001 Virtual printer port for USB) > Apply."
+}
 
 if (-not ('HallmarkRawPrint' -as [type])) {
 Add-Type -TypeDefinition @"
@@ -65,4 +72,4 @@ public class HallmarkRawPrint {
 }
 
 [HallmarkRawPrint]::Send($Printer, [System.IO.File]::ReadAllBytes($Path))
-Write-Output "sent to $Printer"
+Write-Output "sent to $Printer (port $port)"
