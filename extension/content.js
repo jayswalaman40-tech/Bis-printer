@@ -371,7 +371,6 @@
     })();
 
     // Tag numbers (the portal's AHC Tag column) used by the From/To filter.
-    const tagNum = (t) => { const n = parseInt(t.tag_id, 10); return isNaN(n) ? t.position : n; };
     const nums = printable.map(tagNum);
     const firstNo = nums.length ? Math.min(...nums) : 1;
     const lastNo  = nums.length ? Math.max(...nums) : 1;
@@ -457,7 +456,8 @@
       const fv = parseInt(overlay.querySelector('#htpFrom').value, 10);
       const tv = parseInt(overlay.querySelector('#htpTo').value, 10);
       const lo = isNaN(fv) ? -Infinity : fv, hi = isNaN(tv) ? Infinity : tv;
-      return payloads.filter(({ tag }) => { const n = tagNum(tag); return n >= lo && n <= hi; });
+      return payloads.filter(({ tag }) => { const n = tagNum(tag); return n >= lo && n <= hi; })
+        .sort((a, b) => byTagNo(a.tag, b.tag));
     }
     function paintList() {
       const list = overlay.querySelector('#htpQrList');
@@ -465,7 +465,12 @@
       const info = overlay.querySelector('#htpRangeInfo');
       const btn = overlay.querySelector('.htp-print');
       const all = sel.length === payloads.length;
-      info.textContent = all ? `All ${payloads.length} tags` : `${sel.length} of ${payloads.length} tags selected`;
+      const fv = parseInt(overlay.querySelector('#htpFrom').value, 10);
+      const tv = parseInt(overlay.querySelector('#htpTo').value, 10);
+      const lo = isNaN(fv) ? -Infinity : fv, hi = isNaN(tv) ? Infinity : tv;
+      const notReady = data.tags.filter(t => !t.canPrint && tagNum(t) >= lo && tagNum(t) <= hi).sort(byTagNo).map(t => t.tag_id);
+      info.textContent = (all ? `All ${payloads.length} tags` : `${sel.length} of ${payloads.length} tags selected`)
+        + (notReady.length ? ` · not ready on portal (no HUID/weight): tag ${notReady.join(', ')}` : '');
       overlay.querySelector('#htpListHead').textContent =
         `Tags to print (${sel.length}) — real QR, exactly what will print`;
       btn.textContent = all ? `Print All Tags (${sel.length})` : `Print ${sel.length} Tag${sel.length === 1 ? '' : 's'}`;
@@ -498,19 +503,35 @@
     overlay.querySelector('.htp-modal-x').onclick = close;
     overlay.querySelector('.htp-cancel').onclick = close;
     overlay.querySelector('.htp-print').onclick = async () => {
-      const ids = new Set(selected().map(({ tag }) => tag.tag_id));
-      if (!ids.size) return;
+      if (!selected().length) return;
+      const fv = parseInt(overlay.querySelector('#htpFrom').value, 10);
+      const tv = parseInt(overlay.querySelector('#htpTo').value, 10);
       close();
-      await printAll(ids);
+      await printAll({ lo: isNaN(fv) ? -Infinity : fv, hi: isNaN(tv) ? Infinity : tv });
     };
   }
 
+  // Tag number used for ordering and the From/To range: the digits in the
+  // portal's AHC Tag column ("4", "N4" -> 4); the row position if it has none.
+  function tagNum(t) {
+    const d = String(t.tag_id || '').match(/\d+/);
+    return d ? parseInt(d[0], 10) : t.position;
+  }
+  const byTagNo = (a, b) => (tagNum(a) - tagNum(b)) || (a.position - b.position);
+
   // ---- print loop ----
-  // onlyIds: optional Set of tag_ids (From/To range); omitted = every tag.
-  async function printAll(onlyIds) {
+  // range: optional { lo, hi } tag numbers (From/To); omitted = every tag.
+  // Tags print in tag-number order. A failed tag is retried once; anything
+  // not printed is listed by tag number so no tag goes missing silently.
+  async function printAll(range) {
     const { data } = refresh();
-    const printable = data.tags.filter(t => t.canPrint && (!onlyIds || onlyIds.has(t.tag_id)));
-    if (!printable.length) { statusEl.textContent = 'Nothing to print.'; return; }
+    const inRange = data.tags.filter(t => !range || (tagNum(t) >= range.lo && tagNum(t) <= range.hi)).sort(byTagNo);
+    const printable = inRange.filter(t => t.canPrint);
+    const notReady = inRange.filter(t => !t.canPrint).map(t => t.tag_id);
+    if (!printable.length) {
+      statusEl.innerHTML = `<span class="htp-miss">Nothing to print.${notReady.length ? ' Not ready on the portal (no HUID/weight): tag ' + notReady.join(', ') : ''}</span>`;
+      return;
+    }
 
     // Don't pretend to print when the local bridge isn't reachable.
     if (!(await bridgeAlive())) {
@@ -520,25 +541,33 @@
     }
 
     nextBtn.disabled = true;
-    let ok = 0, fail = 0, lastErr = '', mock = false;
+    const wait = (ms) => new Promise(r => setTimeout(r, ms));
+    const failed = []; let ok = 0, lastErr = '', mock = false;
     for (let i = 0; i < printable.length; i++) {
       const tag = printable[i];
-      statusEl.textContent = `Printing ${i+1} / ${printable.length} — Tag #${tag.tag_id}`;
-      try {
-        const r = await sendPrint(await buildPayload(tag, data.jobcardNo, selPurity, selDetail));
-        if (r && r.mock) mock = true;
-        ok++;
-      } catch (e) {
-        fail++; lastErr = (e && e.message) ? e.message : String(e);
-        console.error('[TagPrinter] print failed', tag.tag_id, e);
+      statusEl.textContent = `Printing ${i+1} / ${printable.length} — Tag ${tag.tag_id}`;
+      let done = false;
+      for (let attempt = 1; attempt <= 2 && !done; attempt++) {
+        try {
+          const r = await sendPrint(await buildPayload(tag, data.jobcardNo, selPurity, selDetail));
+          if (r && r.mock) mock = true;
+          ok++; done = true;
+        } catch (e) {
+          lastErr = (e && e.message) ? e.message : String(e);
+          console.error('[TagPrinter] print failed', tag.tag_id, 'attempt', attempt, e);
+          if (attempt === 1) { statusEl.textContent = `Retrying tag ${tag.tag_id}…`; await wait(1500); }
+        }
       }
-      await new Promise(r => setTimeout(r, 600));  // TSC TE244 breathing room
+      if (!done) failed.push(tag.tag_id);
+      await wait(600);  // printer breathing room
     }
+    const skipped = notReady.length
+      ? `<br><span class="htp-miss">Not printed — not ready on the portal (no HUID/weight): tag ${notReady.join(', ')}</span>` : '';
     statusEl.innerHTML = mock
       ? `<span class="htp-miss">TEST MODE — ${ok} tag(s) saved as files in the bridge's "jobs" folder, NOTHING was printed. Close the bridge window and start it with start.bat (not start-test.bat).</span>`
-      : fail
-        ? `<span class="htp-miss">Printed ${ok}, failed ${fail}. ${lastErr ? '('+lastErr+')' : ''}</span>`
-        : `Done — ${ok} printed ✓`;
+      : (failed.length
+          ? `<span class="htp-miss">Printed ${ok}. FAILED: tag ${failed.join(', ')} — print these again. ${lastErr ? '(' + lastErr + ')' : ''}</span>`
+          : `Done — ${ok} printed ✓ (tag ${printable[0].tag_id} to ${printable[printable.length - 1].tag_id})`) + skipped;
     nextBtn.disabled = false;
   }
 

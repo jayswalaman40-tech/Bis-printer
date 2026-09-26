@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Hallmark Tag Printer",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Scrape the BIS MANAK Weighing Desk, print HUID tags on a TSC TE244, and sync article/HUID images.",
   "permissions": ["storage"],
   "host_permissions": [

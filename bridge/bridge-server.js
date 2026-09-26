@@ -85,17 +85,23 @@ app.post('/print-tag', async (req, res) => {
   if (!p.huid || !p.barcode) return res.status(400).json({ ok:false, error:'huid/barcode missing' });
   try {
     const tspl = buildTSPL(p);
-    if (MOCK_MODE) {
-      await saveMockJob(p, tspl);
-    } else {
-      await sendToPrinter(tspl);
-    }
+    // Print jobs run one at a time, in arrival order, so tags can never
+    // overtake or interleave each other on the way to the printer.
+    await enqueue(() => MOCK_MODE ? saveMockJob(p, tspl) : sendToPrinter(tspl));
+    console.log(`[Bridge] printed tag ${p.tag_no || ''} ${p.serial || p.huid}`.replace(/\s+/g, ' '));
     res.json({ ok:true, mock: MOCK_MODE });
   } catch (e) {
     console.error('[Bridge]', e.message);
     res.status(500).json({ ok:false, error:e.message });
   }
 });
+
+let printChain = Promise.resolve();
+function enqueue(job) {
+  const run = printChain.then(job, job);
+  printChain = run.catch(() => {});
+  return run;
+}
 
 // TEST MODE: write the tag's TSPL to ./jobs/<serial|huid>.tspl and log it.
 function saveMockJob(p, tspl) {
@@ -276,32 +282,39 @@ function buildTSPLSmall(p) {
     `QRCODE ${fqx},${S_QR_MID_Y - 30},M,2,A,0,"${url}"\n` + 'PRINT 1,1\n', 'latin1');
 }
 
-/* ---- SILVER on the large tag: details only ----
-   The client wants silver tags to show just five fields on the details side —
-   HUID, article, weight, purity, metal — and nothing else anywhere (no QR,
-   no centre name, no serial; the other side stays blank). Rows use aligned
-   "LABEL : value" columns and stay inside the usual details area. */
+/* ---- SILVER on the large tag ----
+   Details side: HUID, weight, purity, metal as aligned "LABEL : value" rows.
+   Other side (where gold tags carry the QR): only the tag number, large.
+   No QR, no centre name, no serial, no article. */
 function buildTSPLSilverLarge(p) {
   const clean  = (v) => ((v == null ? '' : '' + v).replace(/"/g, '').trim());
   const L = DET_X, COLON = L + 76, VAL = L + 92, MAXX = BC_X - 20;   // 304 / 380 / 396 / 540
   const fitW = (s, perChar) => ('' + s).slice(0, Math.floor((MAXX - VAL) / perChar));
   const wn = parseFloat(p.weight);
   const w3 = isFinite(wn) ? wn.toFixed(3) : clean(p.weight);
+  // Tag number from the extension; older extensions only send the serial
+  // (SNxxxx-0004), so fall back to its number part without leading zeros.
+  const tagNo = clean(p.tag_no) || (clean(p.serial).split('-').pop() || '').replace(/^0+(?=\d)/, '');
   const rows = [
-    ['HUID',    clean(p.huid), '2'],
-    ['ARTICLE', clean(p.article).toUpperCase(), '1'],
-    ['WEIGHT',  w3 ? `${w3} g` : '', '1'],
-    ['PURITY',  clean(p.purity).replace(/^S/, ''), '1'],
-    ['METAL',   'SILVER', '1'],
+    ['HUID',   clean(p.huid), '2', 6],
+    ['WEIGHT', w3 ? `${w3} g` : '', '1', 38],
+    ['PURITY', clean(p.purity).replace(/^S/, ''), '1', 60],
+    ['METAL',  'SILVER', '1', 82],
   ];
-  const ys = [4, 30, 48, 66, 84];
   let body = '';
-  rows.forEach(([label, value, font], i) => {
-    const y = ys[i], ly = font === '2' ? y + 5 : y;        // label sits level with a bigger value
+  rows.forEach(([label, value, font, y]) => {
+    const ly = font === '2' ? y + 5 : y;                 // label level with a bigger value
     body += `TEXT ${L},${ly},"1",0,1,1,"${label}"\n`;
     body += `TEXT ${COLON},${ly},"1",0,1,1,":"\n`;
     body += `TEXT ${VAL},${y},"${font}",0,1,1,"${fitW(value, font === '2' ? 14 : 10)}"\n`;
   });
+  // Other side: "TAG NO." and the number, in the QR's place.
+  if (tagNo) {
+    const tx = BC_X + 12;                                 // 572
+    body += `TEXT ${tx},14,"2",0,1,1,"TAG NO."\n`;
+    const big = tagNo.length <= 6 ? '4' : '2';            // 24x32 font, smaller if very long
+    body += `TEXT ${tx},44,"${big}",0,1,1,"${tagNo.slice(0, 12)}"\n`;
+  }
   return Buffer.from(
     `SIZE 100 mm, 18 mm\nGAP 0 mm, 0 mm\nSPEED ${QR_SPEED}\nDENSITY ${QR_DENSITY}\n` +
     `DIRECTION 0\nREFERENCE 0,0\nCLS\n${body}PRINT 1,1\n`, 'latin1');
