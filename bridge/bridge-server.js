@@ -282,42 +282,66 @@ function buildTSPLSmall(p) {
     `QRCODE ${fqx},${S_QR_MID_Y - 30},M,2,A,0,"${url}"\n` + 'PRINT 1,1\n', 'latin1');
 }
 
-/* ---- SILVER on the large tag ----
-   Details side: HUID, weight, purity, metal as aligned "LABEL : value" rows.
-   Other side (where gold tags carry the QR): only the tag number, large.
-   No QR, no centre name, no serial, no article. */
+/* ---- SILVER on the large tag: 4 designs (s1..s4) ----
+   Every design shows HUID, weight, purity and metal on the details side and
+   only the tag number on the other side (where gold tags carry the QR).
+   No QR, no centre name, no serial, no article. Built-in printer fonts only,
+   so every design prints the same on any TSPL printer.
+     s1 Classic   — "LABEL : value" rows (default)
+     s2 Framed    — border + black header band "SILVER | PURITY 925"
+     s3 Bold HUID — very large HUID, underline, weight / purity / metal
+     s4 Grid      — ruled table, label | value
+   Details sit in X 304..540 (after the blank neck), the tag number in
+   X 560..770. Font advance assumed up to 10/14/18/26 dots (fonts 1/2/3/4). */
 function buildTSPLSilverLarge(p) {
   const clean  = (v) => ((v == null ? '' : '' + v).replace(/"/g, '').trim());
-  const L = DET_X, COLON = L + 76, VAL = L + 92, MAXX = BC_X - 20;   // 304 / 380 / 396 / 540
-  const fitW = (s, perChar) => ('' + s).slice(0, Math.floor((MAXX - VAL) / perChar));
   const wn = parseFloat(p.weight);
   const w3 = isFinite(wn) ? wn.toFixed(3) : clean(p.weight);
+  const huid = clean(p.huid), wt = w3 ? `${w3} g` : '', pur = clean(p.purity).replace(/^S/, '');
   // Tag number from the extension; older extensions only send the serial
   // (SNxxxx-0004), so fall back to its number part without leading zeros.
-  const tagNo = clean(p.tag_no) || (clean(p.serial).split('-').pop() || '').replace(/^0+(?=\d)/, '');
-  const rows = [
-    ['HUID',   clean(p.huid), '2', 6],
-    ['WEIGHT', w3 ? `${w3} g` : '', '1', 38],
-    ['PURITY', clean(p.purity).replace(/^S/, ''), '1', 60],
-    ['METAL',  'SILVER', '1', 82],
-  ];
-  let body = '';
-  rows.forEach(([label, value, font, y]) => {
-    const ly = font === '2' ? y + 5 : y;                 // label level with a bigger value
-    body += `TEXT ${L},${ly},"1",0,1,1,"${label}"\n`;
-    body += `TEXT ${COLON},${ly},"1",0,1,1,":"\n`;
-    body += `TEXT ${VAL},${y},"${font}",0,1,1,"${fitW(value, font === '2' ? 14 : 10)}"\n`;
-  });
-  // Other side: "TAG NO." and the number, in the QR's place.
-  if (tagNo) {
-    const tx = BC_X + 12;                                 // 572
-    body += `TEXT ${tx},14,"2",0,1,1,"TAG NO."\n`;
-    const big = tagNo.length <= 6 ? '4' : '2';            // 24x32 font, smaller if very long
-    body += `TEXT ${tx},44,"${big}",0,1,1,"${tagNo.slice(0, 12)}"\n`;
+  const tagNo = (clean(p.tag_no) || (clean(p.serial).split('-').pop() || '').replace(/^0+(?=\d)/, '')).slice(0, 8);
+  const L = DET_X, R = BC_X - 20;                          // 304 .. 540
+  const TX = BC_X, TR = 770;                               // 560 .. 770
+  const T = (x, y, f, str) => str ? `TEXT ${x},${y},"${f}",0,1,1,"${str}"\n` : '';
+  const bigTag = (x, y) => T(x, y, tagNo.length <= 5 ? '4' : '2', tagNo);
+  let b = '';
+  const d = String(p.template_detail || '');
+
+  if (d === 's2') {                                        // Framed
+    b += T(L + 8, 6, '1', `SILVER  |  PURITY ${pur}`) + `REVERSE ${L - 4},2,${R - L + 4},22\n`;
+    b += `BOX ${L - 4},2,${R},100,2\n`;
+    b += T(L + 8, 34, '1', 'HUID')   + T(L + 80, 29, '3', huid);
+    b += T(L + 8, 68, '1', 'WEIGHT') + T(L + 80, 64, '2', wt);
+    if (tagNo) b += `BOX ${TX},2,${TR},100,2\n` + T(TX + 12, 10, '1', 'TAG NO.') + bigTag(TX + 12, 40);
+  } else if (d === 's3') {                                 // Bold HUID
+    b += T(L, 4, '4', huid);
+    b += `BAR ${L},42,${R - L},3\n`;
+    b += T(L, 52, '1', 'WT')  + T(L + 40, 48, '2', wt);
+    b += T(L, 80, '1', 'PUR') + T(L + 40, 76, '2', `${pur} | SILVER`);
+    if (tagNo) b += T(TX + 12, 8, '2', 'TAG') + `BAR ${TX + 12},32,90,2\n` + bigTag(TX + 12, 44);
+  } else if (d === 's4') {                                 // Grid
+    const V = L + 84;                                      // value column
+    b += `BOX ${L - 4},2,${R},100,2\n` + `BAR ${V - 8},2,2,98\n`;
+    [27, 51, 75].forEach(y => { b += `BAR ${L - 4},${y},${R - L + 4},2\n`; });
+    b += T(L + 4, 9, '1', 'HUID')   + T(V, 5, '2', huid);
+    b += T(L + 4, 33, '1', 'WEIGHT') + T(V, 29, '2', wt);
+    b += T(L + 4, 57, '1', 'PURITY') + T(V, 53, '2', pur);
+    b += T(L + 4, 81, '1', 'METAL')  + T(V, 77, '2', 'SILVER');
+    if (tagNo) b += `BOX ${TX},2,${TR},100,2\n` + `BAR ${TX},27,${TR - TX},2\n` + T(TX + 10, 9, '1', 'TAG NO.') + bigTag(TX + 12, 44);
+  } else {                                                 // s1 Classic (default)
+    const COLON = L + 76, VAL = L + 92;
+    const fitW = (str, perChar) => ('' + str).slice(0, Math.floor((R - VAL) / perChar));
+    [['HUID', huid, '2', 6], ['WEIGHT', wt, '1', 38], ['PURITY', pur, '1', 60], ['METAL', 'SILVER', '1', 82]]
+      .forEach(([label, value, font, y]) => {
+        const ly = font === '2' ? y + 5 : y;               // label level with a bigger value
+        b += T(L, ly, '1', label) + T(COLON, ly, '1', ':') + T(VAL, y, font, fitW(value, font === '2' ? 14 : 10));
+      });
+    if (tagNo) b += T(BC_X + 12, 14, '2', 'TAG NO.') + T(BC_X + 12, 44, tagNo.length <= 6 ? '4' : '2', tagNo);
   }
   return Buffer.from(
     `SIZE 100 mm, 18 mm\nGAP 0 mm, 0 mm\nSPEED ${QR_SPEED}\nDENSITY ${QR_DENSITY}\n` +
-    `DIRECTION 0\nREFERENCE 0,0\nCLS\n${body}PRINT 1,1\n`, 'latin1');
+    `DIRECTION 0\nREFERENCE 0,0\nCLS\n${b}PRINT 1,1\n`, 'latin1');
 }
 
 function buildTSPL(p) {

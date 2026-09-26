@@ -327,6 +327,27 @@
   // Each shows Article, HUID, Weight (3-dec), Purity and Centre name so the
   // operator can judge the tag before printing. Layouts mirror the bridge's
   // buildTSPL output for each design id.
+  // Silver designs s1..s4 — details side only; mirrors the bridge's
+  // buildTSPLSilverLarge. The tag number is shown on the other side.
+  function silverPreviewHTML(tpl, d) {
+    const w = wt3(d.wt), pur = (d.purCode || '').replace(/ SILVER$/, '');
+    const wrap = 'font-family:Arial,Helvetica,sans-serif;color:#111;box-sizing:border-box;width:100%;height:100%;background:#fff;display:flex;flex-direction:column;justify-content:center;';
+    const row = (k, v, big) => `<div style="display:flex;align-items:baseline;gap:6px;"><span style="font-size:8px;letter-spacing:.08em;color:#555;width:44px;">${k}</span><span style="font-size:${big ? 14 : 10}px;font-weight:700;">${v}</span></div>`;
+    if (tpl === 's2') return `<div style="${wrap}border:1.5px solid #111;padding:0;justify-content:flex-start;">
+      <div style="background:#111;color:#fff;font-size:8.5px;font-weight:700;letter-spacing:.08em;padding:3px 8px;">SILVER &nbsp;|&nbsp; PURITY ${pur}</div>
+      <div style="padding:6px 8px;">${row('HUID', d.huid, true)}${row('WEIGHT', w + ' g', true)}</div></div>`;
+    if (tpl === 's3') return `<div style="${wrap}padding:6px 8px;">
+      <div style="font-size:22px;font-weight:800;letter-spacing:.08em;line-height:1.05;border-bottom:2.5px solid #111;padding-bottom:3px;">${d.huid}</div>
+      <div style="font-size:11px;font-weight:700;margin-top:5px;"><span style="font-size:7.5px;color:#555;">WT</span>&nbsp; ${w} g</div>
+      <div style="font-size:11px;font-weight:700;margin-top:1px;"><span style="font-size:7.5px;color:#555;">PUR</span>&nbsp; ${pur} | SILVER</div></div>`;
+    if (tpl === 's4') {
+      const r = (k, v) => `<tr><td style="font-size:7.5px;letter-spacing:.06em;color:#333;border:1px solid #111;padding:2px 5px;width:40px;">${k}</td><td style="font-size:11px;font-weight:700;border:1px solid #111;padding:1px 6px;">${v}</td></tr>`;
+      return `<div style="${wrap}padding:4px;"><table style="width:100%;border-collapse:collapse;border:2px solid #111;">${r('HUID', d.huid)}${r('WEIGHT', w + ' g')}${r('PURITY', pur)}${r('METAL', 'SILVER')}</table></div>`;
+    }
+    return `<div style="${wrap}padding:6px 8px;gap:2px;">
+      ${row('HUID :', d.huid, true)}${row('WEIGHT :', w + ' g')}${row('PURITY :', pur)}${row('METAL :', 'SILVER')}</div>`;
+  }
+
   function detailPreviewHTML(tpl, d) {
     const art = (d.article || '—').toUpperCase();
     const w = wt3(d.wt);
@@ -407,7 +428,21 @@
       </div>`;
     document.body.appendChild(overlay);
 
-    const detailDefs = [
+    // Silver purities get their own designs (no QR, tag number on the back).
+    const isSilver = /^S\d+$/.test(selPurity);
+    if (isSilver && !/^s[1-4]$/.test(selDetail)) selDetail = 's1';
+    if (!isSilver && !/^d[1-5]$/.test(selDetail)) selDetail = 'd1';
+    const silverDefs = [
+      {id:'s1',name:'Classic',rec:true},
+      {id:'s2',name:'Framed'},
+      {id:'s3',name:'Bold HUID'},
+      {id:'s4',name:'Grid'},
+    ];
+    const previewFor = (id) => isSilver ? silverPreviewHTML(id, sample) : detailPreviewHTML(id, sample);
+    overlay.querySelector('.htp-sec').textContent = isSilver
+      ? 'Choose a silver design (HUID · Weight · Purity · Metal — tag number on the other side, no QR)'
+      : 'Choose a design (all show Article · HUID · Weight · Purity · QR · Centre)';
+    const detailDefs = isSilver ? silverDefs : [
       {id:'d1',name:'Bordered grid',rec:true},
       {id:'d2',name:'Header bar'},
       {id:'d3',name:'Big HUID'},
@@ -429,11 +464,24 @@
       overlay.querySelector('#htpDetailCards').innerHTML = detailDefs.map(c => `
         <div class="htp-card ${selDetail===c.id?'sel':''}" data-d="${c.id}">
           <div class="htp-card-top"><span>${c.name}</span>${c.rec?'<em>Recommended</em>':'<i class="chk"></i>'}</div>
-          <div class="htp-card-prev">${detailPreviewHTML(c.id, sample)}</div>
+          <div class="htp-card-prev">${previewFor(c.id)}</div>
         </div>`).join('');
       overlay.querySelectorAll('[data-d]').forEach(el => el.onclick = () => { selDetail = el.dataset.d; paintCards(); paintFinal(); });
     }
     function paintFinal() {
+      if (isSilver) {
+        const boxed = selDetail === 's2' || selDetail === 's4';
+        overlay.querySelector('#htpFinal').innerHTML = `
+        <div class="htp-tag">
+          <div class="htp-tag-l">${silverPreviewHTML(selDetail, sample)}</div>
+          <div class="htp-tag-fold"><div class="htp-tag-hole"></div></div>
+          <div class="htp-tag-r" style="display:flex;flex-direction:column;justify-content:center;padding:8px 14px;font-family:Arial,Helvetica,sans-serif;color:#111;${boxed ? 'border:1.5px solid #111;' : ''}">
+            <div style="font-size:9px;font-weight:700;letter-spacing:.12em;">${selDetail === 's3' ? 'TAG' : 'TAG NO.'}</div>
+            <div style="font-size:26px;font-weight:800;line-height:1.1;">${sample.tagNo}</div>
+          </div>
+        </div>`;
+        return;
+      }
       const qrSvg = sampleQR ? qrRealSVG(sampleQR, 62) : qrPreviewSVG(62);
       const ctr = TAG_CONFIG.AHC_NAME.toUpperCase();
       overlay.querySelector('#htpFinal').innerHTML = `
@@ -471,8 +519,9 @@
       const notReady = data.tags.filter(t => !t.canPrint && tagNum(t) >= lo && tagNum(t) <= hi).sort(byTagNo).map(t => t.tag_id);
       info.textContent = (all ? `All ${payloads.length} tags` : `${sel.length} of ${payloads.length} tags selected`)
         + (notReady.length ? ` · not ready on portal (no HUID/weight): tag ${notReady.join(', ')}` : '');
-      overlay.querySelector('#htpListHead').textContent =
-        `Tags to print (${sel.length}) — real QR, exactly what will print`;
+      overlay.querySelector('#htpListHead').textContent = isSilver
+        ? `Tags to print (${sel.length})`
+        : `Tags to print (${sel.length}) — real QR, exactly what will print`;
       btn.textContent = all ? `Print All Tags (${sel.length})` : `Print ${sel.length} Tag${sel.length === 1 ? '' : 's'}`;
       btn.disabled = !sel.length;
       if (!payloads.length) { list.innerHTML = '<div class="htp-qrloading">No tags ready to print.</div>'; return; }
@@ -480,7 +529,7 @@
       list.innerHTML = sel.map(({ tag, pl }) => `
         <div class="htp-qrrow">
           <img class="htp-qrphoto miss" data-src="${IMG_BASE}/${encodeURIComponent(pl.huid)}/article" alt="" title="Synced article photo">
-          <div class="htp-qrimg">${qrRealSVG(pl.qr_rows, 64)}</div>
+          ${isSilver ? '' : `<div class="htp-qrimg">${qrRealSVG(pl.qr_rows, 64)}</div>`}
           <div class="htp-qrinfo">
             <div class="htp-qrhuid">${pl.huid}</div>
             <div class="htp-qrmeta">${(tag.article||'—')} · Wt ${wt3(tag.weight)}g · ${PURITY_LABEL[selPurity]||selPurity}</div>
