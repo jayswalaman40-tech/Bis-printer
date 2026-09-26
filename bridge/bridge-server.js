@@ -7,6 +7,8 @@ const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
+const qrcode = require('./qrcode.js');
 
 const app = express();
 const PORT = 7072;
@@ -84,6 +86,7 @@ app.post('/print-tag', async (req, res) => {
   const p = req.body;
   if (!p.huid || !p.barcode) return res.status(400).json({ ok:false, error:'huid/barcode missing' });
   try {
+    ensureQR(p);
     const tspl = buildTSPL(p);
     // Print jobs run one at a time, in arrival order, so tags can never
     // overtake or interleave each other on the way to the printer.
@@ -95,6 +98,33 @@ app.post('/print-tag', async (req, res) => {
     res.status(500).json({ ok:false, error:e.message });
   }
 });
+
+// Older extensions send no QR matrix (qr_rows), and some send a long
+// query-string link. The printer's own QRCODE command then draws a QR that
+// phones cannot read (seen on the TVSE LP 46 Neo). So the bridge always makes
+// the QR itself: the same short signed link and the same matrix as the
+// current extension, drawn as a bitmap.
+const SIGN_SECRET = 'hd-d081b74809f6507741bcceb5c6783dea';   // = extension/config.js
+const DETAIL_BASE = 'https://jhcv-five.vercel.app/t';          // = extension/config.js
+function ensureQR(p) {
+  if (Array.isArray(p.qr_rows) && p.qr_rows.length) return;
+  const h = '' + (p.huid == null ? '' : p.huid), w = '' + (p.weight == null ? '' : p.weight),
+        pu = '' + (p.purity == null ? '' : p.purity);
+  const sig = crypto.createHmac('sha256', SIGN_SECRET).update([h, w, pu].join('|')).digest('hex').slice(0, 8);
+  const url = `${DETAIL_BASE}/${[h, w, pu, sig].map(encodeURIComponent).join('/')}`;
+  const qr = qrcode(0, 'M');
+  qr.addData(url);
+  qr.make();
+  const n = qr.getModuleCount(), rows = [];
+  for (let r = 0; r < n; r++) {
+    let row = '';
+    for (let c = 0; c < n; c++) row += qr.isDark(r, c) ? '1' : '0';
+    rows.push(row);
+  }
+  p.detail_url = url;
+  p.qr_rows = rows;
+  console.log(`[Bridge] QR made by the bridge (extension sent none): ${url}`);
+}
 
 let printChain = Promise.resolve();
 function enqueue(job) {
