@@ -190,6 +190,7 @@ const S_QR_RIGHT  = 636;   // QR's right edge (printer X, ~2.5 mm from the body 
 const S_TAG_MIN_X = 449;   // "TAG - n" must start after the fold (printer X)
 const S_QR_MAX_H  = 66;    // max QR size (~8 mm) so it never reaches the tag edge
 const S_QR_MID_Y  = 54;    // QR vertical centre, level with the design's centre
+const S_SHIFT     = 8;     // print 1 mm lower on the tag (top line was cut); 8 dots = 1 mm
 const S_GAP_MM    = 3;     // gap between tags on the roll (measured ~3 mm)
 
 // Tag-space drawing helpers (all return TSPL lines).
@@ -280,7 +281,7 @@ function buildTSPLSmall(p) {
 
   const header =
     `SIZE 82 mm, 12 mm\nGAP ${S_GAP_MM} mm, 0 mm\nSPEED ${QR_SPEED}\nDENSITY ${QR_DENSITY}\n` +
-    `DIRECTION 0\nREFERENCE 0,0\nCLS\n${smallDesign(p.template_detail, f)}`;
+    `DIRECTION 0\nREFERENCE 0,0\nSHIFT ${S_SHIFT}\nCLS\n${smallDesign(p.template_detail, f)}`;
 
   // "TAG - n" just left of the QR, vertically centred on it. Uses the bigger
   // font when it fits between the fold and the QR.
