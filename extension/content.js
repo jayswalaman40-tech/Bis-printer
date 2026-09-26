@@ -24,16 +24,33 @@
   const ENTRY_TABLE = 'tabWeight';
 
   // ---- constants ----
+  // Gold codes are the plain fineness (916 …). Silver codes carry an "S"
+  // prefix (S925 …) so a silver 999 is never read as 24K gold — the code goes
+  // into the signed QR URL, and the bridge and website decode it the same way.
   const PURITY_OPTIONS = [
-    { code: '999', label: '24K · 999' },
-    { code: '958', label: '23K · 958' },
-    { code: '916', label: '22K · 916' },
-    { code: '833', label: '20K · 833' },
-    { code: '750', label: '18K · 750' },
-    { code: '585', label: '14K · 585' },
-    { code: '375', label: '9K · 375'  },
+    { code: '999', label: '24K · 999', metal: 'Gold' },
+    { code: '958', label: '23K · 958', metal: 'Gold' },
+    { code: '916', label: '22K · 916', metal: 'Gold' },
+    { code: '833', label: '20K · 833', metal: 'Gold' },
+    { code: '750', label: '18K · 750', metal: 'Gold' },
+    { code: '585', label: '14K · 585', metal: 'Gold' },
+    { code: '375', label: '9K · 375',  metal: 'Gold' },
+    { code: 'S999', label: 'Silver · 999', metal: 'Silver' },
+    { code: 'S990', label: 'Silver · 990', metal: 'Silver' },
+    { code: 'S970', label: 'Silver · 970', metal: 'Silver' },
+    { code: 'S925', label: 'Silver · 925 (Sterling)', metal: 'Silver' },
+    { code: 'S900', label: 'Silver · 900', metal: 'Silver' },
+    { code: 'S835', label: 'Silver · 835', metal: 'Silver' },
+    { code: 'S800', label: 'Silver · 800', metal: 'Silver' },
   ];
+  // One extension per metal: config.js METAL = 'Gold' or 'Silver' limits the
+  // purity list (anything else shows both). The full list above stays the
+  // reference for labels and the material check.
+  const METAL = ['Gold', 'Silver'].includes(TAG_CONFIG.METAL) ? TAG_CONFIG.METAL : '';
+  const METAL_OPTIONS = PURITY_OPTIONS.filter(o => !METAL || o.metal === METAL);
   const PURITY_LABEL = Object.fromEntries(PURITY_OPTIONS.map(o => [o.code, o.label]));
+  // What the purity looks like on the printed tag: "916" / "925 SILVER".
+  const purityShort = (code) => /^S\d+$/.test(code || '') ? `${code.slice(1)} SILVER` : (code || '');
 
   // Force a DataTables-driven table to show every row (default page size is
   // 10). We bump its "length" <select> to the largest option and fire a
@@ -103,7 +120,7 @@
   // Signs the tag's values so the verification page can reject edited URLs.
   // The canonical string and secret MUST match the website's verifier.
   async function signParams(p) {
-    const msg = [p.h, p.w, p.p].join('|');
+    const msg = [p.h, p.w, p.p].concat(p.c ? [p.c] : []).join('|');
     const enc = new TextEncoder();
     const key = await crypto.subtle.importKey(
       'raw', enc.encode(TAG_CONFIG.SIGN_SECRET),
@@ -117,12 +134,12 @@
     const serial = serialFor(jobcardNo, tag.tag_id);
     // Keep the URL short (only h/w/p/s) so the printed QR stays coarse enough
     // to scan on the narrow tag. The centre name lives on the website.
-    const params = { h: tag.huid, w: tag.weight, p: purityCode };
+    const params = { h: tag.huid, w: tag.weight, p: purityCode, c: TAG_CONFIG.CENTRE_CODE || '' };
     const s = await signParams(params);
     // Short path form: /t/<huid>/<weight>/<purity>/<sig> — much shorter than a
     // query string, so the QR stays coarse enough to scan on the narrow tag.
     const seg = (v) => encodeURIComponent(String(v == null ? '' : v));
-    const path = [params.h, params.w, params.p, s].map(seg).join('/');
+    const path = [params.h, params.w, params.p, s].concat(params.c ? [params.c] : []).map(seg).join('/');
     const url = `${TAG_CONFIG.DETAIL_BASE}/${path}`;
     // We generate the QR ourselves and send the matrix to the bridge, which
     // prints it as a bitmap — the printer no longer generates the QR.
@@ -131,6 +148,7 @@
       huid: tag.huid, weight: tag.weight, purity: purityCode,
       article: tag.article,
       serial, barcode: `HD-${tag.huid}`,
+      tag_no: tag.tag_id,                   // AHC tag number, printed as "TAG - n"
       ahc_name: TAG_CONFIG.AHC_NAME,
       template_detail: templateDetail,      // 'd1'..'d5'
       detail_url: url,
@@ -139,18 +157,27 @@
   }
 
   // ---- bridge calls ----
+  // Sent through the extension's background worker, not fetched from the BIS
+  // page: Chrome blocks (or asks permission for) a public website talking to
+  // localhost, but the extension itself has host permission for the bridge.
+  function bg(msg) {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(msg, (r) => {
+          if (chrome.runtime.lastError) return resolve({ ok: false, error: chrome.runtime.lastError.message });
+          resolve(r || { ok: false, error: 'no response from extension' });
+        });
+      } catch (e) { resolve({ ok: false, error: String(e && e.message || e) }); }
+    });
+  }
   async function bridgeAlive() {
-    try {
-      const r = await fetch(`${TAG_CONFIG.BRIDGE_URL}/health`, { method:'GET', signal: AbortSignal.timeout(2000) });
-      return r.ok;
-    } catch { return false; }
+    const r = await bg({ type: 'bridge-health' });
+    return !!(r && r.ok);
   }
   async function sendPrint(payload) {
-    const r = await fetch(`${TAG_CONFIG.BRIDGE_URL}/print-tag`, {
-      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
-    });
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
+    const r = await bg({ type: 'bridge-print', payload });
+    if (!r || !r.ok) throw new Error((r && r.error) || 'print failed');
+    return r;
   }
 
   // ---- state ----
@@ -159,11 +186,14 @@
 
   // ---- build panel ----
   const panel = document.createElement('div');
-  panel.className = 'htp-panel';
+  panel.className = 'htp-panel' + (METAL ? ' htp-' + METAL.toLowerCase() : '');
+  // If the other metal's extension already added its panel, sit to its left.
+  const others = document.querySelectorAll('.htp-panel').length;
+  if (others) panel.style.right = (18 + others * 574) + 'px';
   panel.innerHTML = `
     <div class="htp-head">
       <span class="htp-dot"></span>
-      <span class="htp-title">Tag Printer</span>
+      <span class="htp-title">Tag Printer${METAL ? ' · ' + METAL : ''}</span>
       <button class="htp-x" title="Hide">&times;</button>
     </div>
     <div class="htp-body">
@@ -174,7 +204,8 @@
         <label>Purity (whole jobcard):</label>
         <select class="htp-purity-sel">
           <option value="">— Select —</option>
-          ${PURITY_OPTIONS.map(o => `<option value="${o.code}">${o.label}</option>`).join('')}
+          ${(METAL ? [METAL] : ['Gold', 'Silver']).map(m => `<optgroup label="${m}">${METAL_OPTIONS.filter(o => o.metal === m)
+            .map(o => `<option value="${o.code}">${o.label}</option>`).join('')}</optgroup>`).join('')}
         </select>
       </div>
       <p class="htp-status">Loading…</p>
@@ -219,10 +250,19 @@
     statusEl.innerHTML = `${data.tags.length} tags · ${printable} ready`
       + (missing ? ` · ${missing} not ready (no HUID/weight)` : '');
     renderTable(data);
-    nextBtn.disabled = !(selPurity && printable > 0);
-    nextBtn.textContent = selPurity
-      ? `Choose template & print (${printable})`
-      : 'Select purity first';
+    // Guard: the portal's Material column says Gold/Silver — refuse a purity
+    // of the other metal so a silver jobcard can't get gold tags (or vice versa).
+    const selMetal = (PURITY_OPTIONS.find(o => o.code === selPurity) || {}).metal;
+    const mats = data.tags.map(t => (t.material || '').toLowerCase());
+    const wrongMetal = selMetal && mats.some(m => m.includes(selMetal === 'Gold' ? 'silver' : 'gold'));
+    if (wrongMetal) {
+      const other = selMetal === 'Gold' ? 'Silver' : 'Gold';
+      statusEl.innerHTML = `<span class="htp-miss">This jobcard's material is ${other}, but a ${selMetal} purity is selected. Choose a ${other} purity.</span>`;
+    }
+    nextBtn.disabled = !(selPurity && printable > 0) || !!wrongMetal;
+    nextBtn.textContent = !selPurity ? 'Select purity first'
+      : wrongMetal ? 'Purity does not match material'
+      : `Choose template & print (${printable})`;
     return { data, printable };
   }
 
@@ -287,6 +327,27 @@
   // Each shows Article, HUID, Weight (3-dec), Purity and Centre name so the
   // operator can judge the tag before printing. Layouts mirror the bridge's
   // buildTSPL output for each design id.
+  // Silver designs s1..s4 — details side only; mirrors the bridge's
+  // buildTSPLSilverLarge. The tag number is shown on the other side.
+  function silverPreviewHTML(tpl, d) {
+    const w = wt3(d.wt), pur = (d.purCode || '').replace(/ SILVER$/, '');
+    const wrap = 'font-family:Arial,Helvetica,sans-serif;color:#111;box-sizing:border-box;width:100%;height:100%;background:#fff;display:flex;flex-direction:column;justify-content:center;';
+    const row = (k, v, big) => `<div style="display:flex;align-items:baseline;gap:6px;"><span style="font-size:8px;letter-spacing:.08em;color:#555;width:44px;">${k}</span><span style="font-size:${big ? 14 : 10}px;font-weight:700;">${v}</span></div>`;
+    if (tpl === 's2') return `<div style="${wrap}border:1.5px solid #111;padding:0;justify-content:flex-start;">
+      <div style="background:#111;color:#fff;font-size:8.5px;font-weight:700;letter-spacing:.08em;padding:3px 8px;">SILVER &nbsp;|&nbsp; PURITY ${pur}</div>
+      <div style="padding:6px 8px;">${row('HUID', d.huid, true)}${row('WEIGHT', w + ' g', true)}</div></div>`;
+    if (tpl === 's3') return `<div style="${wrap}padding:6px 8px;">
+      <div style="font-size:22px;font-weight:800;letter-spacing:.08em;line-height:1.05;border-bottom:2.5px solid #111;padding-bottom:3px;">${d.huid}</div>
+      <div style="font-size:11px;font-weight:700;margin-top:5px;"><span style="font-size:7.5px;color:#555;">WT</span>&nbsp; ${w} g</div>
+      <div style="font-size:11px;font-weight:700;margin-top:1px;"><span style="font-size:7.5px;color:#555;">PUR</span>&nbsp; ${pur} | SILVER</div></div>`;
+    if (tpl === 's4') {
+      const r = (k, v) => `<tr><td style="font-size:7.5px;letter-spacing:.06em;color:#333;border:1px solid #111;padding:2px 5px;width:40px;">${k}</td><td style="font-size:11px;font-weight:700;border:1px solid #111;padding:1px 6px;">${v}</td></tr>`;
+      return `<div style="${wrap}padding:4px;"><table style="width:100%;border-collapse:collapse;border:2px solid #111;">${r('HUID', d.huid)}${r('WEIGHT', w + ' g')}${r('PURITY', pur)}${r('METAL', 'SILVER')}</table></div>`;
+    }
+    return `<div style="${wrap}padding:6px 8px;gap:2px;">
+      ${row('HUID :', d.huid, true)}${row('WEIGHT :', w + ' g')}${row('PURITY :', pur)}${row('METAL :', 'SILVER')}</div>`;
+  }
+
   function detailPreviewHTML(tpl, d) {
     const art = (d.article || '—').toUpperCase();
     const w = wt3(d.wt);
@@ -326,9 +387,14 @@
     const sample = (() => {
       const t = printable[0] || data.tags[0] || {};
       return { huid: t.huid || '------', wt: t.weight || '0.000',
-        article: t.article || '', pur: PURITY_LABEL[selPurity], purCode: selPurity,
-        serial: serialFor(data.jobcardNo, t.tag_id) };
+        article: t.article || '', pur: PURITY_LABEL[selPurity], purCode: purityShort(selPurity),
+        serial: serialFor(data.jobcardNo, t.tag_id), tagNo: t.tag_id || '—' };
     })();
+
+    // Tag numbers (the portal's AHC Tag column) used by the From/To filter.
+    const nums = printable.map(tagNum);
+    const firstNo = nums.length ? Math.min(...nums) : 1;
+    const lastNo  = nums.length ? Math.max(...nums) : 1;
 
     const overlay = document.createElement('div');
     overlay.className = 'htp-modal';
@@ -346,7 +412,13 @@
           <div class="htp-cards htp-cards-3" id="htpDetailCards"></div>
           <p class="htp-sec">Live preview</p>
           <div class="htp-final" id="htpFinal"></div>
-          <p class="htp-sec">Tags to print (${printable.length}) — real QR, exactly what will print</p>
+          <p class="htp-sec">Print only a range of tags (leave blank to print all)</p>
+          <div class="htp-range">
+            <label>From tag <input type="number" min="1" id="htpFrom" placeholder="${firstNo}"></label>
+            <label>To tag <input type="number" min="1" id="htpTo" placeholder="${lastNo}"></label>
+            <span id="htpRangeInfo"></span>
+          </div>
+          <p class="htp-sec" id="htpListHead">Tags to print (${printable.length}) — real QR, exactly what will print</p>
           <div class="htp-qrlist" id="htpQrList"><div class="htp-qrloading">Generating QR codes…</div></div>
         </div>
         <div class="htp-modal-foot">
@@ -356,7 +428,21 @@
       </div>`;
     document.body.appendChild(overlay);
 
-    const detailDefs = [
+    // Silver purities get their own designs (no QR, tag number on the back).
+    const isSilver = /^S\d+$/.test(selPurity);
+    if (isSilver && !/^s[1-4]$/.test(selDetail)) selDetail = 's1';
+    if (!isSilver && !/^d[1-5]$/.test(selDetail)) selDetail = 'd1';
+    const silverDefs = [
+      {id:'s1',name:'Classic',rec:true},
+      {id:'s2',name:'Framed'},
+      {id:'s3',name:'Bold HUID'},
+      {id:'s4',name:'Grid'},
+    ];
+    const previewFor = (id) => isSilver ? silverPreviewHTML(id, sample) : detailPreviewHTML(id, sample);
+    overlay.querySelector('.htp-sec').textContent = isSilver
+      ? 'Choose a silver design (HUID · Weight · Purity · Metal — tag number on the other side, no QR)'
+      : 'Choose a design (all show Article · HUID · Weight · Purity · QR · Centre)';
+    const detailDefs = isSilver ? silverDefs : [
       {id:'d1',name:'Bordered grid',rec:true},
       {id:'d2',name:'Header bar'},
       {id:'d3',name:'Big HUID'},
@@ -378,11 +464,24 @@
       overlay.querySelector('#htpDetailCards').innerHTML = detailDefs.map(c => `
         <div class="htp-card ${selDetail===c.id?'sel':''}" data-d="${c.id}">
           <div class="htp-card-top"><span>${c.name}</span>${c.rec?'<em>Recommended</em>':'<i class="chk"></i>'}</div>
-          <div class="htp-card-prev">${detailPreviewHTML(c.id, sample)}</div>
+          <div class="htp-card-prev">${previewFor(c.id)}</div>
         </div>`).join('');
       overlay.querySelectorAll('[data-d]').forEach(el => el.onclick = () => { selDetail = el.dataset.d; paintCards(); paintFinal(); });
     }
     function paintFinal() {
+      if (isSilver) {
+        const boxed = selDetail === 's2' || selDetail === 's4';
+        overlay.querySelector('#htpFinal').innerHTML = `
+        <div class="htp-tag">
+          <div class="htp-tag-l">${silverPreviewHTML(selDetail, sample)}</div>
+          <div class="htp-tag-fold"><div class="htp-tag-hole"></div></div>
+          <div class="htp-tag-r" style="display:flex;flex-direction:column;justify-content:center;padding:8px 14px;font-family:Arial,Helvetica,sans-serif;color:#111;${boxed ? 'border:1.5px solid #111;' : ''}">
+            <div style="font-size:9px;font-weight:700;letter-spacing:.12em;">${selDetail === 's3' ? 'TAG' : 'TAG NO.'}</div>
+            <div style="font-size:26px;font-weight:800;line-height:1.1;">${sample.tagNo}</div>
+          </div>
+        </div>`;
+        return;
+      }
       const qrSvg = sampleQR ? qrRealSVG(sampleQR, 62) : qrPreviewSVG(62);
       const ctr = TAG_CONFIG.AHC_NAME.toUpperCase();
       overlay.querySelector('#htpFinal').innerHTML = `
@@ -393,41 +492,95 @@
             <div class="htp-qrbox">${qrSvg}</div>
             <div class="htp-qrside">
               <div class="htp-ctr">${ctr}</div>
+              <div class="htp-serlabel">TAG - ${sample.tagNo}</div>
               <div class="htp-serlabel">Serial No.</div>
               <div class="serial">${sample.serial}</div>
             </div>
           </div>
         </div>`;
     }
+    // Tags inside the From/To range (blank = open-ended on that side).
+    function selected() {
+      const fv = parseInt(overlay.querySelector('#htpFrom').value, 10);
+      const tv = parseInt(overlay.querySelector('#htpTo').value, 10);
+      const lo = isNaN(fv) ? -Infinity : fv, hi = isNaN(tv) ? Infinity : tv;
+      return payloads.filter(({ tag }) => { const n = tagNum(tag); return n >= lo && n <= hi; })
+        .sort((a, b) => byTagNo(a.tag, b.tag));
+    }
     function paintList() {
       const list = overlay.querySelector('#htpQrList');
+      const sel = selected();
+      const info = overlay.querySelector('#htpRangeInfo');
+      const btn = overlay.querySelector('.htp-print');
+      const all = sel.length === payloads.length;
+      const fv = parseInt(overlay.querySelector('#htpFrom').value, 10);
+      const tv = parseInt(overlay.querySelector('#htpTo').value, 10);
+      const lo = isNaN(fv) ? -Infinity : fv, hi = isNaN(tv) ? Infinity : tv;
+      const notReady = data.tags.filter(t => !t.canPrint && tagNum(t) >= lo && tagNum(t) <= hi).sort(byTagNo).map(t => t.tag_id);
+      info.textContent = (all ? `All ${payloads.length} tags` : `${sel.length} of ${payloads.length} tags selected`)
+        + (notReady.length ? ` · not ready on portal (no HUID/weight): tag ${notReady.join(', ')}` : '');
+      overlay.querySelector('#htpListHead').textContent = isSilver
+        ? `Tags to print (${sel.length})`
+        : `Tags to print (${sel.length}) — real QR, exactly what will print`;
+      btn.textContent = all ? `Print All Tags (${sel.length})` : `Print ${sel.length} Tag${sel.length === 1 ? '' : 's'}`;
+      btn.disabled = !sel.length;
       if (!payloads.length) { list.innerHTML = '<div class="htp-qrloading">No tags ready to print.</div>'; return; }
-      list.innerHTML = payloads.map(({ tag, pl }) => `
+      if (!sel.length) { list.innerHTML = '<div class="htp-qrloading">No tags in this range.</div>'; return; }
+      list.innerHTML = sel.map(({ tag, pl }) => `
         <div class="htp-qrrow">
-          <div class="htp-qrimg">${qrRealSVG(pl.qr_rows, 72)}</div>
+          <img class="htp-qrphoto miss" data-src="${IMG_BASE}/${encodeURIComponent(pl.huid)}/article" alt="" title="Synced article photo">
+          ${isSilver ? '' : `<div class="htp-qrimg">${qrRealSVG(pl.qr_rows, 64)}</div>`}
           <div class="htp-qrinfo">
             <div class="htp-qrhuid">${pl.huid}</div>
             <div class="htp-qrmeta">${(tag.article||'—')} · Wt ${wt3(tag.weight)}g · ${PURITY_LABEL[selPurity]||selPurity}</div>
-            <div class="htp-qrserial">${pl.serial}</div>
+            <div class="htp-qrserial">Tag ${tag.tag_id} · ${pl.serial}</div>
           </div>
         </div>`).join('');
+      // Attach load/error handlers in the isolated world (page CSP may block
+      // inline handlers). The thumbnail stays hidden until it actually loads.
+      list.querySelectorAll('.htp-qrphoto').forEach((im) => {
+        im.addEventListener('load', () => im.classList.remove('miss'));
+        im.addEventListener('error', () => im.classList.add('miss'));
+        im.src = im.dataset.src;
+      });
     }
     paintCards(); paintFinal(); paintList();
+    overlay.querySelector('#htpFrom').addEventListener('input', paintList);
+    overlay.querySelector('#htpTo').addEventListener('input', paintList);
 
     const close = () => overlay.remove();
     overlay.querySelector('.htp-modal-x').onclick = close;
     overlay.querySelector('.htp-cancel').onclick = close;
     overlay.querySelector('.htp-print').onclick = async () => {
+      if (!selected().length) return;
+      const fv = parseInt(overlay.querySelector('#htpFrom').value, 10);
+      const tv = parseInt(overlay.querySelector('#htpTo').value, 10);
       close();
-      await printAll();
+      await printAll({ lo: isNaN(fv) ? -Infinity : fv, hi: isNaN(tv) ? Infinity : tv });
     };
   }
 
+  // Tag number used for ordering and the From/To range: the digits in the
+  // portal's AHC Tag column ("4", "N4" -> 4); the row position if it has none.
+  function tagNum(t) {
+    const d = String(t.tag_id || '').match(/\d+/);
+    return d ? parseInt(d[0], 10) : t.position;
+  }
+  const byTagNo = (a, b) => (tagNum(a) - tagNum(b)) || (a.position - b.position);
+
   // ---- print loop ----
-  async function printAll() {
+  // range: optional { lo, hi } tag numbers (From/To); omitted = every tag.
+  // Tags print in tag-number order. A failed tag is retried once; anything
+  // not printed is listed by tag number so no tag goes missing silently.
+  async function printAll(range) {
     const { data } = refresh();
-    const printable = data.tags.filter(t => t.canPrint);
-    if (!printable.length) { statusEl.textContent = 'Nothing to print.'; return; }
+    const inRange = data.tags.filter(t => !range || (tagNum(t) >= range.lo && tagNum(t) <= range.hi)).sort(byTagNo);
+    const printable = inRange.filter(t => t.canPrint);
+    const notReady = inRange.filter(t => !t.canPrint).map(t => t.tag_id);
+    if (!printable.length) {
+      statusEl.innerHTML = `<span class="htp-miss">Nothing to print.${notReady.length ? ' Not ready on the portal (no HUID/weight): tag ' + notReady.join(', ') : ''}</span>`;
+      return;
+    }
 
     // Don't pretend to print when the local bridge isn't reachable.
     if (!(await bridgeAlive())) {
@@ -437,22 +590,33 @@
     }
 
     nextBtn.disabled = true;
-    let ok = 0, fail = 0, lastErr = '';
+    const wait = (ms) => new Promise(r => setTimeout(r, ms));
+    const failed = []; let ok = 0, lastErr = '', mock = false;
     for (let i = 0; i < printable.length; i++) {
       const tag = printable[i];
-      statusEl.textContent = `Printing ${i+1} / ${printable.length} — Tag #${tag.tag_id}`;
-      try {
-        await sendPrint(await buildPayload(tag, data.jobcardNo, selPurity, selDetail));
-        ok++;
-      } catch (e) {
-        fail++; lastErr = (e && e.message) ? e.message : String(e);
-        console.error('[TagPrinter] print failed', tag.tag_id, e);
+      statusEl.textContent = `Printing ${i+1} / ${printable.length} — Tag ${tag.tag_id}`;
+      let done = false;
+      for (let attempt = 1; attempt <= 2 && !done; attempt++) {
+        try {
+          const r = await sendPrint(await buildPayload(tag, data.jobcardNo, selPurity, selDetail));
+          if (r && r.mock) mock = true;
+          ok++; done = true;
+        } catch (e) {
+          lastErr = (e && e.message) ? e.message : String(e);
+          console.error('[TagPrinter] print failed', tag.tag_id, 'attempt', attempt, e);
+          if (attempt === 1) { statusEl.textContent = `Retrying tag ${tag.tag_id}…`; await wait(1500); }
+        }
       }
-      await new Promise(r => setTimeout(r, 600));  // TSC TE244 breathing room
+      if (!done) failed.push(tag.tag_id);
+      await wait(600);  // printer breathing room
     }
-    statusEl.innerHTML = fail
-      ? `<span class="htp-miss">Printed ${ok}, failed ${fail}. ${lastErr ? '('+lastErr+')' : ''}</span>`
-      : `Done — ${ok} printed ✓`;
+    const skipped = notReady.length
+      ? `<br><span class="htp-miss">Not printed — not ready on the portal (no HUID/weight): tag ${notReady.join(', ')}</span>` : '';
+    statusEl.innerHTML = mock
+      ? `<span class="htp-miss">TEST MODE — ${ok} tag(s) saved as files in the bridge's "jobs" folder, NOTHING was printed. Close the bridge window and start it with start.bat (not start-test.bat).</span>`
+      : (failed.length
+          ? `<span class="htp-miss">Printed ${ok}. FAILED: tag ${failed.join(', ')} — print these again. ${lastErr ? '(' + lastErr + ')' : ''}</span>`
+          : `Done — ${ok} printed ✓ (tag ${printable[0].tag_id} to ${printable[printable.length - 1].tag_id})`) + skipped;
     nextBtn.disabled = false;
   }
 
@@ -475,10 +639,14 @@
 
   // ---- init ----
   (async function init() {
-    if (!(await bridgeAlive())) { warnEl.style.display = 'block'; }
+    // Show the "bridge not running" warning only while the bridge is really
+    // down, and clear it by itself once start.bat is running (no reload needed).
+    const checkBridge = async () => { warnEl.style.display = (await bridgeAlive()) ? 'none' : 'block'; };
+    await checkBridge();
+    setInterval(checkBridge, 5000);
     const data = scrape();
     if (!data.jobcardNo) { statusEl.textContent = 'No jobcard found on this page'; return; }
-    panel.querySelector('.htp-title').textContent = `Tag Printer — ${data.jobcardNo}`;
+    panel.querySelector('.htp-title').textContent = `Tag Printer${METAL ? ' · ' + METAL : ''} — ${data.jobcardNo}`;
     watchTable();
     // Show every row (DataTables defaults to 10 per page) before scraping.
     expandTable(PRINT_TABLE);

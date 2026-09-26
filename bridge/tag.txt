@@ -1,0 +1,5 @@
+# Hallmark Tag Bridge — tag size
+# First real line below (lines starting with # are ignored):
+#   small  = 82 x 12 mm  (printable 81 x 12)
+#   large  = 100 x 18 mm (original)
+small

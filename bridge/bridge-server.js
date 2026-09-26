@@ -1,14 +1,73 @@
-/* Hallmark Tag Bridge — port 7072. Receives a print job, builds TSPL, sends to TSC TE244. */
+/* Hallmark Tag Bridge — port 7072. Receives a print job, builds TSPL, and sends
+   it to a TSPL-compatible thermal label printer (TVSE LP 46 Neo, TSC TE244, …).
+   The printer name is set in printer.txt (see resolvePrinterName below). */
 const express = require('express');
 const cors = require('cors');
 const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
+const qrcode = require('./qrcode.js');
 
 const app = express();
 const PORT = 7072;
-const PRINTER_NAME = 'TSC TE244';   // exact Windows printer/share name
+
+// ---- Printer name resolution (no code edit needed per PC) ----
+// The Windows printer/share name is taken from, in order:
+//   1) command line:  node bridge-server.js --printer "TVSELP46"
+//   2) environment:    set HALLMARK_PRINTER=TVSELP46
+//   3) printer.txt     (a plain text file next to this script — first
+//                       non-empty line that is not a # comment)
+//   4) fallback default
+// So on a new PC you just put the shared printer name in printer.txt.
+function resolvePrinterName() {
+  const i = process.argv.indexOf('--printer');
+  if (i >= 0 && process.argv[i + 1]) return process.argv[i + 1].trim();
+  if (process.env.HALLMARK_PRINTER && process.env.HALLMARK_PRINTER.trim()) return process.env.HALLMARK_PRINTER.trim();
+  try {
+    const f = path.join(__dirname, 'printer.txt');
+    if (fs.existsSync(f)) {
+      const line = fs.readFileSync(f, 'utf8').split(/\r?\n/).map(s => s.trim())
+        .filter(s => s && !s.startsWith('#'))[0];
+      if (line) return line;
+    }
+  } catch (e) {}
+  return 'TVSELP46';   // default share name for the TVSE LP 46 Neo
+}
+const PRINTER_NAME = resolvePrinterName();   // exact Windows printer/share name
+
+// ---- Tag size ----  'large' = 100x18 mm (default) | 'small' = 82x12 mm.
+// Set via HALLMARK_TAG env, or a tag.txt file next to this script, else 'large'.
+function resolveTag() {
+  if (process.env.HALLMARK_TAG && process.env.HALLMARK_TAG.trim()) return process.env.HALLMARK_TAG.trim().toLowerCase();
+  try {
+    const f = path.join(__dirname, 'tag.txt');
+    if (fs.existsSync(f)) {
+      const line = fs.readFileSync(f, 'utf8').split(/\r?\n/).map(s => s.trim())
+        .filter(s => s && !s.startsWith('#'))[0];
+      if (line) return line.toLowerCase();
+    }
+  } catch (e) {}
+  return 'large';
+}
+const TAG_SIZE = resolveTag();   // 'large' or 'small'
+
+// ---- Centre name override ----  If set, printed instead of the portal's AHC
+// name. From HALLMARK_CENTRE env or centre.txt (first non-# line), else none.
+function resolveCentre() {
+  if (process.env.HALLMARK_CENTRE && process.env.HALLMARK_CENTRE.trim()) return process.env.HALLMARK_CENTRE.trim();
+  try {
+    const f = path.join(__dirname, 'centre.txt');
+    if (fs.existsSync(f)) {
+      const line = fs.readFileSync(f, 'utf8').split(/\r?\n/).map(s => s.trim())
+        .filter(s => s && !s.startsWith('#'))[0];
+      if (line) return line;
+    }
+  } catch (e) {}
+  return '';
+}
+const CENTRE_NAME = resolveCentre();
 
 // TEST MODE — for a full end-to-end trial without a printer.
 // Enable with `node bridge-server.js --mock` (or start-test.bat), or by
@@ -21,24 +80,62 @@ const JOBS_DIR  = path.join(__dirname, 'jobs');
 app.use(cors({ origin: 'https://huid.manakonline.in' }));
 app.use(express.json());
 
-app.get('/health', (req, res) => res.json({ ok: true, printer: PRINTER_NAME, mock: MOCK_MODE }));
+app.get('/health', (req, res) => res.json({ ok: true, printer: PRINTER_NAME, tag: TAG_SIZE, mock: MOCK_MODE }));
 
 app.post('/print-tag', async (req, res) => {
   const p = req.body;
   if (!p.huid || !p.barcode) return res.status(400).json({ ok:false, error:'huid/barcode missing' });
   try {
+    ensureQR(p);
     const tspl = buildTSPL(p);
-    if (MOCK_MODE) {
-      await saveMockJob(p, tspl);
-    } else {
-      await sendToPrinter(tspl);
-    }
+    // Print jobs run one at a time, in arrival order, so tags can never
+    // overtake or interleave each other on the way to the printer.
+    await enqueue(() => MOCK_MODE ? saveMockJob(p, tspl) : sendToPrinter(tspl));
+    console.log(`[Bridge] printed tag ${p.tag_no || ''} ${p.serial || p.huid}`.replace(/\s+/g, ' '));
     res.json({ ok:true, mock: MOCK_MODE });
   } catch (e) {
     console.error('[Bridge]', e.message);
     res.status(500).json({ ok:false, error:e.message });
   }
 });
+
+// Older extensions send no QR matrix (qr_rows), and some send a long
+// query-string link. The printer's own QRCODE command then draws a QR that
+// phones cannot read (seen on the TVSE LP 46 Neo). So the bridge always makes
+// the QR itself: the same short signed link and the same matrix as the
+// current extension, drawn as a bitmap.
+const SIGN_SECRET = 'hd-d081b74809f6507741bcceb5c6783dea';   // = extension/config.js
+const DETAIL_BASE = 'https://jhcv-five.vercel.app/t';          // = extension/config.js
+// Centre code at the end of the link ('' = Jaliyan), from centre.txt.
+// Must be listed in CENTRES in website/components/TagView.jsx.
+const CENTRE_CODE = /RADHE/i.test(CENTRE_NAME || '') ? 'R' : '';
+function ensureQR(p) {
+  if (Array.isArray(p.qr_rows) && p.qr_rows.length) return;
+  const h = '' + (p.huid == null ? '' : p.huid), w = '' + (p.weight == null ? '' : p.weight),
+        pu = '' + (p.purity == null ? '' : p.purity);
+  const c = CENTRE_CODE ? [CENTRE_CODE] : [];
+  const sig = crypto.createHmac('sha256', SIGN_SECRET).update([h, w, pu].concat(c).join('|')).digest('hex').slice(0, 8);
+  const url = `${DETAIL_BASE}/${[h, w, pu, sig].concat(c).map(encodeURIComponent).join('/')}`;
+  const qr = qrcode(0, 'M');
+  qr.addData(url);
+  qr.make();
+  const n = qr.getModuleCount(), rows = [];
+  for (let r = 0; r < n; r++) {
+    let row = '';
+    for (let c = 0; c < n; c++) row += qr.isDark(r, c) ? '1' : '0';
+    rows.push(row);
+  }
+  p.detail_url = url;
+  p.qr_rows = rows;
+  console.log(`[Bridge] QR made by the bridge (extension sent none): ${url}`);
+}
+
+let printChain = Promise.resolve();
+function enqueue(job) {
+  const run = printChain.then(job, job);
+  printChain = run.catch(() => {});
+  return run;
+}
 
 // TEST MODE: write the tag's TSPL to ./jobs/<serial|huid>.tspl and log it.
 function saveMockJob(p, tspl) {
@@ -73,14 +170,227 @@ const BC_X   = SKIP_X + 264;   // QR after the details; leaves room for the
 // Range 0-15. SPEED range ~1-5 (ips); moderate speed keeps edges clean.
 const QR_DENSITY = 5;          // was 6 — a touch lighter to reduce module bleed
 const QR_SPEED   = 3;          // was 4 — slightly slower for cleaner edges
+
+/* ---- SMALL TAG: 82 x 12 mm (printable 81 x 12) @203dpi = 8 dots/mm ----
+   Canvas 656 x 96 dots. Printer X=0 is at the TIP of the thin tail (dandi).
+   The tag is read with the tail on the LEFT and the body on the right, so
+   everything prints unrotated:
+     X   0..~225: thin tail (2-3 mm tall) — print NOTHING here
+     X 232..422 : next to the tail — the chosen design box (d1..d5)
+     X ~441     : fold line (nothing printed across it)
+     X 449..636 : body end — "TAG - n", then the QR at the far end
+   Designs are laid out in "tag space": u = dots from the box's left edge,
+   v = dots from its top edge; X = S_X0 + u, y = S_TOP + v.
+   Tune the constants below after a test print if something sits off the tag. */
+const S_X0        = 232;   // printer X of the design box's left edge, just after the tail
+const S_TOP       = 14;    // printer y of the design's top edge
+const S_W         = 190;   // design width  (dots, ~24 mm) — ends at X 422, clear of the fold
+const S_H         = 80;    // design height (dots, 10 mm)
+const S_QR_RIGHT  = 636;   // QR's right edge (printer X, ~2.5 mm from the body end)
+const S_TAG_MIN_X = 449;   // "TAG - n" must start after the fold (printer X)
+const S_QR_MAX_H  = 66;    // max QR size (~8 mm) so it never reaches the tag edge
+const S_QR_MID_Y  = 54;    // QR vertical centre, level with the design's centre
+const S_SHIFT     = 8;     // print 1 mm lower on the tag (top line was cut); 8 dots = 1 mm
+const S_GAP_MM    = 3;     // gap between tags on the roll (measured ~3 mm)
+
+// Tag-space drawing helpers (all return TSPL lines).
+const sText = (u, v, font, s) =>
+  s ? `TEXT ${S_X0 + u},${S_TOP + v},"${font}",0,1,1,"${s}"\n` : '';
+const sBox  = (u1, v1, u2, v2, t) => `BOX ${S_X0 + u1},${S_TOP + v1},${S_X0 + u2},${S_TOP + v2},${t}\n`;
+const sBar  = (u1, v1, u2, v2) => `BAR ${S_X0 + u1},${S_TOP + v1},${u2 - u1},${v2 - v1}\n`;
+const sRev  = (u1, v1, u2, v2) => `REVERSE ${S_X0 + u1},${S_TOP + v1},${u2 - u1},${v2 - v1}\n`;
+// Character advance in dots, measured from a real TVSE LP 46 Neo print (font 1
+// prints ~10 dots per character, not the nominal 8). Used for fitting text.
+const FONT_W = { '1': 10, '2': 14, '3': 18, '4': 26 };
+const fit = (s, font, width) => ('' + s).slice(0, Math.floor(width / FONT_W[font]));
+
+// The 5 designs from the extension's template picker, sized for 190 x 80 dots.
+// Every design shows Centre, HUID, Article, Weight and Purity (QR is separate).
+// Fields are printed as three aligned columns — LABEL  -  value — so the dash
+// sits in the same place on every row with a space either side.
+const COL_DASH = 50;   // dash column, relative to the row's left edge
+const COL_VAL  = 68;   // value column, relative to the row's left edge
+function fieldRow(x, v, label, value, vFont) {
+  const vf = vFont || '1';
+  const dy = vf === '1' ? 0 : -4;                      // bigger value font sits a little higher
+  return sText(x, v, '1', label) + sText(x + COL_DASH, v, '1', '-') +
+    sText(x + COL_VAL, v + dy, vf, fit(value, vf, S_W - x - COL_VAL - 4));
+}
+function smallDesign(d, f) {
+  const { huid, art, wt, pur, centre } = f;
+  const L = 6, IW = S_W - 2 * L;                       // inner left + width
+  if (d === 'd2') {                                     // Header bar
+    return sText(L, 2, '1', fit(centre, '1', IW)) + sRev(0, 0, S_W, 16) +
+      sBox(0, 0, S_W, S_H, 2) +                         // after REVERSE so its border stays black
+      fieldRow(L, 23, 'HUID', huid, '2') +
+      fieldRow(L, 41, 'ART', art) +
+      fieldRow(L, 53, 'WT', wt) +
+      fieldRow(L, 65, 'PUR', pur);
+  }
+  if (d === 'd3') {                                     // Big HUID
+    const X = 10;
+    return sBar(0, 0, 4, S_H) +
+      sText(X, 1, '1', fit(centre, '1', S_W - X)) +
+      sText(X, 14, '3', huid) +
+      fieldRow(X, 42, 'ART', art) +
+      fieldRow(X, 55, 'WT', wt) +
+      fieldRow(X, 68, 'PUR', pur);
+  }
+  if (d === 'd4') {                                     // Labeled box
+    return sBox(0, 0, S_W, S_H, 2) +
+      sText(L, 3, '1', fit(centre, '1', IW)) + sBar(L, 17, S_W - L, 19) +
+      fieldRow(L, 23, 'HUID', huid) +
+      fieldRow(L, 37, 'ART', art) +
+      fieldRow(L, 51, 'WT', wt) +
+      fieldRow(L, 65, 'PUR', pur);
+  }
+  if (d === 'd5') {                                     // Minimal
+    const X = 2;
+    return sText(X, 1, '1', fit(centre, '1', S_W - 4)) +
+      sText(X, 13, '3', huid) +
+      sBar(X, 40, S_W - 4, 42) +
+      fieldRow(X, 44, 'ART', art) +
+      fieldRow(X, 56, 'WT', wt) +
+      fieldRow(X, 68, 'PUR', pur);
+  }
+  // d1 (default): Bordered grid
+  return sBox(0, 0, S_W, S_H, 2) +
+    fieldRow(L, 7, 'HUID', huid, '2') +
+    fieldRow(L, 26, 'ART', art) +
+    fieldRow(L, 39, 'WT', wt) +
+    fieldRow(L, 52, 'PUR', pur) +
+    sText(L, 65, '1', fit(centre, '1', IW));
+}
+
+function buildTSPLSmall(p) {
+  const clean  = (v) => ((v == null ? '' : '' + v).replace(/"/g, '').trim());
+  const wn = parseFloat(p.weight);
+  const w3 = isFinite(wn) ? wn.toFixed(3) : clean(p.weight);
+  const f = {
+    huid:   clean(p.huid),
+    art:    clean(p.article).toUpperCase(),
+    wt:     w3 ? `${w3}g` : '',
+    pur:    /^S\d+$/.test(clean(p.purity)) ? `${clean(p.purity).slice(1)} SILVER` : clean(p.purity),  // 916 / 925 SILVER
+    centre: clean(CENTRE_NAME || p.ahc_name).toUpperCase(),
+  };
+  const url = p.detail_url || `HD-${f.huid}`;
+  // Tag number: sent by the extension; older extensions only send the serial
+  // (SNxxxx-0005), so fall back to its number part without leading zeros.
+  const tagNo = clean(p.tag_no) ||
+    (clean(p.serial).split('-').pop() || '').replace(/^0+(?=\d)/, '');
+
+  const header =
+    `SIZE 82 mm, 12 mm\nGAP ${S_GAP_MM} mm, 0 mm\nSPEED ${QR_SPEED}\nDENSITY ${QR_DENSITY}\n` +
+    `DIRECTION 0\nREFERENCE 0,0\nSHIFT ${S_SHIFT}\nCLS\n${smallDesign(p.template_detail, f)}`;
+
+  // "TAG - n" just left of the QR, vertically centred on it. Uses the bigger
+  // font when it fits between the fold and the QR.
+  const tagText = (qrX) => {
+    if (!tagNo) return '';
+    const s = `TAG - ${tagNo}`;
+    const end = qrX - 8;                                // text must end here
+    const room = end - S_TAG_MIN_X;
+    const font = s.length * FONT_W['2'] <= room ? '2' : '1';
+    const h = font === '2' ? 20 : 12;
+    const t = fit(s, font, room);
+    return `TEXT ${end - t.length * FONT_W[font]},${S_QR_MID_Y - h / 2},"${font}",0,1,1,"${t}"\n`;
+  };
+
+  // Preferred: render the extension-supplied QR matrix as a bitmap — small
+  // (2-3 dots per module, at most ~8 mm) and centred on the design's height.
+  if (Array.isArray(p.qr_rows) && p.qr_rows.length) {
+    const n = p.qr_rows.length;
+    const scale = Math.max(2, Math.min(3, Math.floor(S_QR_MAX_H / n)));
+    const bmp = qrBitmap(p.qr_rows, scale);             // unrotated = upright as read
+    const qx = S_QR_RIGHT - bmp.widthPx;                // QR spans qx..S_QR_RIGHT
+    const qy = Math.max(2, Math.round(S_QR_MID_Y - bmp.height / 2));
+    return Buffer.concat([
+      Buffer.from(header + tagText(qx), 'latin1'),
+      Buffer.from(`BITMAP ${qx},${qy},${bmp.widthBytes},${bmp.height},0,`, 'latin1'),
+      bmp.data,
+      Buffer.from('\nPRINT 1,1\n', 'latin1'),
+    ]);
+  }
+  // Fallback: let the printer generate the QR (cell size 2 keeps it small).
+  const fqx = S_QR_RIGHT - 70;
+  return Buffer.from(header + tagText(fqx) +
+    `QRCODE ${fqx},${S_QR_MID_Y - 30},M,2,A,0,"${url}"\n` + 'PRINT 1,1\n', 'latin1');
+}
+
+/* ---- SILVER on the large tag: 4 designs (s1..s4) ----
+   Every design shows HUID, weight, purity and metal on the details side and
+   only the tag number on the other side (where gold tags carry the QR).
+   No QR, no centre name, no serial, no article. Built-in printer fonts only,
+   so every design prints the same on any TSPL printer.
+     s1 Classic   — "LABEL : value" rows (default)
+     s2 Framed    — border + black header band "SILVER | PURITY 925"
+     s3 Bold HUID — very large HUID, underline, weight / purity / metal
+     s4 Grid      — ruled table, label | value
+   Details sit in X 304..540 (after the blank neck), the tag number in
+   X 560..770. Font advance assumed up to 10/14/18/26 dots (fonts 1/2/3/4). */
+function buildTSPLSilverLarge(p) {
+  const clean  = (v) => ((v == null ? '' : '' + v).replace(/"/g, '').trim());
+  const wn = parseFloat(p.weight);
+  const w3 = isFinite(wn) ? wn.toFixed(3) : clean(p.weight);
+  const huid = clean(p.huid), wt = w3 ? `${w3} g` : '', pur = clean(p.purity).replace(/^S/, '');
+  // Tag number from the extension; older extensions only send the serial
+  // (SNxxxx-0004), so fall back to its number part without leading zeros.
+  const tagNo = (clean(p.tag_no) || (clean(p.serial).split('-').pop() || '').replace(/^0+(?=\d)/, '')).slice(0, 8);
+  const L = DET_X, R = BC_X - 20;                          // 304 .. 540
+  const TX = BC_X, TR = 770;                               // 560 .. 770
+  const T = (x, y, f, str) => str ? `TEXT ${x},${y},"${f}",0,1,1,"${str}"\n` : '';
+  const bigTag = (x, y) => T(x, y, tagNo.length <= 5 ? '4' : '2', tagNo);
+  let b = '';
+  const d = String(p.template_detail || '');
+
+  if (d === 's2') {                                        // Framed
+    b += T(L + 8, 6, '1', `SILVER  |  PURITY ${pur}`) + `REVERSE ${L - 4},2,${R - L + 4},22\n`;
+    b += `BOX ${L - 4},2,${R},100,2\n`;
+    b += T(L + 8, 34, '1', 'HUID')   + T(L + 80, 29, '3', huid);
+    b += T(L + 8, 68, '1', 'WEIGHT') + T(L + 80, 64, '2', wt);
+    if (tagNo) b += `BOX ${TX},2,${TR},100,2\n` + T(TX + 12, 10, '1', 'TAG NO.') + bigTag(TX + 12, 40);
+  } else if (d === 's3') {                                 // Bold HUID
+    b += T(L, 4, '4', huid);
+    b += `BAR ${L},42,${R - L},3\n`;
+    b += T(L, 52, '1', 'WT')  + T(L + 40, 48, '2', wt);
+    b += T(L, 80, '1', 'PUR') + T(L + 40, 76, '2', `${pur} | SILVER`);
+    if (tagNo) b += T(TX + 12, 8, '2', 'TAG') + `BAR ${TX + 12},32,90,2\n` + bigTag(TX + 12, 44);
+  } else if (d === 's4') {                                 // Grid
+    const V = L + 84;                                      // value column
+    b += `BOX ${L - 4},2,${R},100,2\n` + `BAR ${V - 8},2,2,98\n`;
+    [27, 51, 75].forEach(y => { b += `BAR ${L - 4},${y},${R - L + 4},2\n`; });
+    b += T(L + 4, 9, '1', 'HUID')   + T(V, 5, '2', huid);
+    b += T(L + 4, 33, '1', 'WEIGHT') + T(V, 29, '2', wt);
+    b += T(L + 4, 57, '1', 'PURITY') + T(V, 53, '2', pur);
+    b += T(L + 4, 81, '1', 'METAL')  + T(V, 77, '2', 'SILVER');
+    if (tagNo) b += `BOX ${TX},2,${TR},100,2\n` + `BAR ${TX},27,${TR - TX},2\n` + T(TX + 10, 9, '1', 'TAG NO.') + bigTag(TX + 12, 44);
+  } else {                                                 // s1 Classic (default)
+    const COLON = L + 76, VAL = L + 92;
+    const fitW = (str, perChar) => ('' + str).slice(0, Math.floor((R - VAL) / perChar));
+    [['HUID', huid, '2', 6], ['WEIGHT', wt, '1', 38], ['PURITY', pur, '1', 60], ['METAL', 'SILVER', '1', 82]]
+      .forEach(([label, value, font, y]) => {
+        const ly = font === '2' ? y + 5 : y;               // label level with a bigger value
+        b += T(L, ly, '1', label) + T(COLON, ly, '1', ':') + T(VAL, y, font, fitW(value, font === '2' ? 14 : 10));
+      });
+    if (tagNo) b += T(BC_X + 12, 14, '2', 'TAG NO.') + T(BC_X + 12, 44, tagNo.length <= 6 ? '4' : '2', tagNo);
+  }
+  return Buffer.from(
+    `SIZE 100 mm, 18 mm\nGAP 0 mm, 0 mm\nSPEED ${QR_SPEED}\nDENSITY ${QR_DENSITY}\n` +
+    `DIRECTION 0\nREFERENCE 0,0\nCLS\n${b}PRINT 1,1\n`, 'latin1');
+}
+
 function buildTSPL(p) {
-  const purMap = { '999':'999 24K','958':'958 23K','916':'916 22K','833':'833 20K','750':'750 18K','585':'585 14K','375':'375 9K' };
+  if (TAG_SIZE === 'small') return buildTSPLSmall(p);
+  if (/^S\d+$/.test(String(p.purity || '').trim())) return buildTSPLSilverLarge(p);
+  const purMap = { '999':'999 24K','958':'958 23K','916':'916 22K','833':'833 20K','750':'750 18K','585':'585 14K','375':'375 9K',
+    // Silver codes arrive as S<fineness> (S925) so silver 999 is never taken for 24K gold.
+    'S999':'999 SILVER','S990':'990 SILVER','S970':'970 SILVER','S925':'925 SILVER','S900':'900 SILVER','S835':'835 SILVER','S800':'800 SILVER' };
   const clean  = (v) => ((v == null ? '' : '' + v).replace(/"/g, '').trim());
   const purity = purMap[p.purity] || clean(p.purity);
   const huid   = clean(p.huid);
   const serial = clean(p.serial);
   const article= clean(p.article).toUpperCase().slice(0, 20);
-  const centre = clean(p.ahc_name).toUpperCase().slice(0, 28);
+  const centre = clean(CENTRE_NAME || p.ahc_name).toUpperCase().slice(0, 28);
   // Weight always shown to 3 decimals.
   const wn = parseFloat(p.weight);
   const w3 = isFinite(wn) ? wn.toFixed(3) : clean(p.weight);
@@ -94,6 +404,10 @@ function buildTSPL(p) {
   // leaving a white gap before the QR at BC_X.
   const L  = DET_X;            // details left edge (304)
   const RP = L + 150;          // purity column
+  const DET_MAX0 = BC_X - 20;
+  // A long purity ("925 SILVER") is pulled left so it never reaches the QR's
+  // quiet zone, assuming up to 10 dots per character; gold stays at RP.
+  const purX = Math.min(RP, DET_MAX0 - purity.length * 10);
   const DET_MAX = BC_X - 20;   // details must end before here (quiet zone)
   const LW = DET_MAX - L;      // width available for a left-side underline
   const QX = BC_X;             // QR left edge (560)  — clean band, no borders
@@ -132,7 +446,7 @@ function buildTSPL(p) {
       `TEXT ${L},8,"1",0,1,1,"HUID"\n` +
       `TEXT ${L},22,"3",0,1,1,"${huid}"\n` +
       `TEXT ${L},60,"1",0,1,1,"${article}"\n` +
-      `TEXT ${L},84,"1",0,1,1,"Wt ${wtg}"\n` + `TEXT ${RP},84,"1",0,1,1,"${purity}"\n`;
+      `TEXT ${L},84,"1",0,1,1,"Wt ${wtg}"\n` + `TEXT ${purX},84,"1",0,1,1,"${purity}"\n`;
   }
 
   // RIGHT column — sits to the right of the QR: centre name (wrapped) on top,
@@ -205,25 +519,72 @@ function qrBitmap(rows, scale) {
   return { data, widthBytes, height, widthPx };
 }
 
+// Two ways to reach the printer:
+//  1) "copy /b <file> \\localhost\<share>" — needs the printer shared and the
+//     share writable; on some PCs Windows answers "Access is denied".
+//  2) rawprint.ps1 — hands the bytes to the Windows print spooler as a RAW job
+//     by printer name (no share, no network permission involved).
+// We try 1 first; once it fails we remember that and go straight to 2.
+let useSpooler = false;
+function copyToShare(tmp) {
+  return new Promise((resolve, reject) => {
+    exec(`copy /b "${tmp}" "\\\\localhost\\${PRINTER_NAME}"`, { shell: 'cmd.exe' }, (err, so, se) => {
+      if (err) return reject(new Error(((se || '') + ' ' + (so || '')).trim() || err.message));
+      resolve(true);
+    });
+  });
+}
+function spoolRaw(tmp) {
+  return new Promise((resolve, reject) => {
+    const ps1 = path.join(__dirname, 'rawprint.ps1');
+    const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${ps1}" -Printer "${PRINTER_NAME}" -Path "${tmp}"`;
+    exec(cmd, { timeout: 30000 }, (err, so, se) => {
+      if (err) return reject(new Error(((se || '') + ' ' + (so || '')).trim() || err.message));
+      if (so && so.trim()) console.log('[Bridge] spooler: ' + so.trim());
+      resolve(true);
+    });
+  });
+}
 function sendToPrinter(tspl) {
   return new Promise((resolve, reject) => {
-    const tmp = path.join(os.tmpdir(), `tag_${Date.now()}.tspl`);
+    const tmp = path.join(os.tmpdir(), `tag_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.tspl`);
     // tspl may be a Buffer (contains binary BITMAP data) — write raw bytes.
-    fs.writeFile(tmp, tspl, (werr) => {
+    fs.writeFile(tmp, tspl, async (werr) => {
       if (werr) return reject(new Error('temp write failed: ' + werr.message));
-      exec(`copy /b "${tmp}" "\\\\localhost\\${PRINTER_NAME}"`, { shell:'cmd.exe' }, (err, so, se) => {
-        fs.unlink(tmp, () => {});
-        if (err) return reject(new Error(`printer error: ${err.message}\n${se}`));
-        resolve(true);
-      });
+      const done = (e) => { fs.unlink(tmp, () => {}); e ? reject(e) : resolve(true); };
+      if (!useSpooler) {
+        try { await copyToShare(tmp); return done(); }
+        catch (e1) {
+          console.warn(`[Bridge] share print failed (${e1.message.replace(/\s+/g, ' ')}) — using the Windows print spooler instead.`);
+          useSpooler = true;
+          try { await spoolRaw(tmp); return done(); }
+          catch (e2) { useSpooler = false; return done(new Error(`printer error — share: ${e1.message} | spooler: ${e2.message}`)); }
+        }
+      }
+      try { await spoolRaw(tmp); done(); }
+      catch (e) { done(new Error('printer error (spooler): ' + e.message)); }
     });
   });
 }
 
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`Hallmark Tag Bridge running on http://localhost:${PORT}  (printer: ${PRINTER_NAME})`);
+const server = app.listen(PORT, '127.0.0.1', () => {
+  console.log(`Hallmark Tag Bridge running on http://localhost:${PORT}  (printer: ${PRINTER_NAME}, tag: ${TAG_SIZE})`);
   if (MOCK_MODE) {
     console.log(`*** TEST MODE — no printer needed. TSPL saved to: ${JOBS_DIR} ***`);
   }
   console.log('Keep this window open.');
+});
+// Port already taken = another bridge (often an older copy, or one started
+// from Windows Startup) is still running. Say so plainly instead of a stack trace.
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') {
+    console.error(`\n*** Port ${PORT} is already in use — another Hallmark Tag Bridge is already running. ***`);
+    console.error(`Check it at http://localhost:${PORT}/health`);
+    console.error('To stop it: open Command Prompt and run   taskkill /F /IM node.exe');
+    console.error('Also remove any old start.bat shortcut from the Startup folder (Win+R -> shell:startup).');
+    console.error('Then run start.bat again.\n');
+  } else {
+    console.error('[Bridge] could not start:', e.message);
+  }
+  process.exit(1);
 });
