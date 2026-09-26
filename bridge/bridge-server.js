@@ -106,12 +106,16 @@ app.post('/print-tag', async (req, res) => {
 // current extension, drawn as a bitmap.
 const SIGN_SECRET = 'hd-d081b74809f6507741bcceb5c6783dea';   // = extension/config.js
 const DETAIL_BASE = 'https://jhcv-five.vercel.app/t';          // = extension/config.js
+// Centre code at the end of the link ('' = Jaliyan), from centre.txt.
+// Must be listed in CENTRES in website/components/TagView.jsx.
+const CENTRE_CODE = /RADHE/i.test(CENTRE_NAME || '') ? 'R' : '';
 function ensureQR(p) {
   if (Array.isArray(p.qr_rows) && p.qr_rows.length) return;
   const h = '' + (p.huid == null ? '' : p.huid), w = '' + (p.weight == null ? '' : p.weight),
         pu = '' + (p.purity == null ? '' : p.purity);
-  const sig = crypto.createHmac('sha256', SIGN_SECRET).update([h, w, pu].join('|')).digest('hex').slice(0, 8);
-  const url = `${DETAIL_BASE}/${[h, w, pu, sig].map(encodeURIComponent).join('/')}`;
+  const c = CENTRE_CODE ? [CENTRE_CODE] : [];
+  const sig = crypto.createHmac('sha256', SIGN_SECRET).update([h, w, pu].concat(c).join('|')).digest('hex').slice(0, 8);
+  const url = `${DETAIL_BASE}/${[h, w, pu, sig].concat(c).map(encodeURIComponent).join('/')}`;
   const qr = qrcode(0, 'M');
   qr.addData(url);
   qr.make();

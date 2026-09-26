@@ -9,6 +9,9 @@ const TAG_CONFIG = {
   DETAIL_BASE: 'https://jhcv-five.vercel.app/t',
   AHC_NAME:    'Jaliyan Hallmarking Center',   // per-customer
   AHC_CODE:    'SHC001',                        // per-customer
+  // Centre shown on the verification page: '' = Jaliyan, 'R' = Radhe.
+  // Must be a code listed in CENTRES in website/components/TagView.jsx.
+  CENTRE_CODE: '',
   // Which metal this extension prints: 'Gold' or 'Silver' (anything else, or
   // blank, offers both). Install one Gold and one Silver copy if needed.
   METAL:       '',

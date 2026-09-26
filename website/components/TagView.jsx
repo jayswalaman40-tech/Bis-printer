@@ -29,10 +29,20 @@ const SIGN_SECRET = 'hd-d081b74809f6507741bcceb5c6783dea';
 // stored per HUID as <HUID>/article and <HUID>/huid.
 const IMG_BASE = 'https://dkufqwkyrdponsaekshv.supabase.co/storage/v1/object/public/bistags';
 
-// Recompute the tag signature the extension put in ?s= and compare.
+// Centre codes: the optional last part of the tag link (/t/h/w/p/sig/R).
+// Tags without a code are Jaliyan's (every tag printed before codes existed).
+// Must match CENTRE_CODE in extension/config.js and bridge-server.js.
+const CENTRES = {
+  J: 'Jaliyan Hallmarking Center',
+  R: 'Radhe Hallmarking',
+};
+
+// Recompute the tag signature the extension put in ?s= and compare. A centre
+// code, when present, is signed too, so it cannot be swapped on a real tag.
 async function verifySignature(q) {
   if (!q.s) return false;
-  const msg = [q.h || '', q.w || '', q.p || ''].join('|');
+  if (q.c && !CENTRES[q.c]) return false;
+  const msg = [q.h || '', q.w || '', q.p || ''].concat(q.c ? [q.c] : []).join('|');
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
     'raw', enc.encode(SIGN_SECRET),
@@ -112,14 +122,14 @@ export default function TagView({ q = {}, isReady = true }) {
   const [tampered, setTampered] = useState(false);
   const [ready, setReady] = useState(false);
 
-  const qKey = [q.h, q.w, q.p, q.s, q.ac].join('~');
+  const qKey = [q.h, q.w, q.p, q.s, q.c, q.ac].join('~');
   useEffect(() => {
     if (!isReady) return;
     if (!q.h) { setReady(true); return; }
     verifySignature(q).then((valid) => {
       if (!valid) { setTampered(true); setReady(true); return; }
       setData({ huid: q.h || '', weight: q.w || '', purity: q.p || '',
-        ahc_name: q.ac || 'Jaliyan Hallmarking Center' });
+        ahc_name: (q.c && CENTRES[q.c]) || q.ac || CENTRES.J });
       setReady(true);
     });
   }, [isReady, qKey]);

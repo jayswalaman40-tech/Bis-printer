@@ -120,7 +120,7 @@
   // Signs the tag's values so the verification page can reject edited URLs.
   // The canonical string and secret MUST match the website's verifier.
   async function signParams(p) {
-    const msg = [p.h, p.w, p.p].join('|');
+    const msg = [p.h, p.w, p.p].concat(p.c ? [p.c] : []).join('|');
     const enc = new TextEncoder();
     const key = await crypto.subtle.importKey(
       'raw', enc.encode(TAG_CONFIG.SIGN_SECRET),
@@ -134,12 +134,12 @@
     const serial = serialFor(jobcardNo, tag.tag_id);
     // Keep the URL short (only h/w/p/s) so the printed QR stays coarse enough
     // to scan on the narrow tag. The centre name lives on the website.
-    const params = { h: tag.huid, w: tag.weight, p: purityCode };
+    const params = { h: tag.huid, w: tag.weight, p: purityCode, c: TAG_CONFIG.CENTRE_CODE || '' };
     const s = await signParams(params);
     // Short path form: /t/<huid>/<weight>/<purity>/<sig> — much shorter than a
     // query string, so the QR stays coarse enough to scan on the narrow tag.
     const seg = (v) => encodeURIComponent(String(v == null ? '' : v));
-    const path = [params.h, params.w, params.p, s].map(seg).join('/');
+    const path = [params.h, params.w, params.p, s].concat(params.c ? [params.c] : []).map(seg).join('/');
     const url = `${TAG_CONFIG.DETAIL_BASE}/${path}`;
     // We generate the QR ourselves and send the matrix to the bridge, which
     // prints it as a bitmap — the printer no longer generates the QR.
